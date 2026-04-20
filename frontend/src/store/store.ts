@@ -14,9 +14,6 @@ export type Screen =
   | 'audit'
   | 'mcp';
 
-export type Viz = 'dag' | 'list' | 'timeline';
-export type Density = 'compact' | 'spacious';
-
 export type Toast = { id: string; msg: string; kind: 'ok' | 'err' | 'info' };
 
 type LiveRun = {
@@ -33,8 +30,6 @@ type State = {
   screen: Screen;
   selectedJobId: string | null;
   selectedRunId: number | null;
-  viz: Viz;
-  density: Density;
 
   jobs: Job[];
   runs: Run[];
@@ -48,8 +43,6 @@ type State = {
   setScreen: (s: Screen) => void;
   setSelectedJobId: (id: string | null) => void;
   setSelectedRunId: (id: number | null) => void;
-  setViz: (v: Viz) => void;
-  setDensity: (d: Density) => void;
 
   refreshJobs: () => Promise<unknown>;
   refreshRuns: () => Promise<unknown>;
@@ -71,8 +64,6 @@ export const useStore = create<State>()(
       screen: 'dashboard',
       selectedJobId: null,
       selectedRunId: null,
-      viz: 'dag',
-      density: 'compact',
 
       jobs: [],
       runs: [],
@@ -86,8 +77,6 @@ export const useStore = create<State>()(
       setScreen: (s) => set({ screen: s }),
       setSelectedJobId: (id) => set({ selectedJobId: id }),
       setSelectedRunId: (id) => set({ selectedRunId: id }),
-      setViz: (v) => set({ viz: v }),
-      setDensity: (d) => set({ density: d }),
 
       refreshJobs: async () => set({ jobs: await api.listJobs() }),
       refreshRuns: async () => set({ runs: await api.listRuns({ limit: 50 }) }),
@@ -193,8 +182,6 @@ export const useStore = create<State>()(
         screen: s.screen,
         selectedJobId: s.selectedJobId,
         selectedRunId: s.selectedRunId,
-        viz: s.viz,
-        density: s.density,
       }),
     }
   )
