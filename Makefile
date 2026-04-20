@@ -66,15 +66,23 @@ dev-lan:
 # ---- Production build ----------------------------------------------------
 build:
 	cd frontend && npm run build
-	@echo "\n✓ frontend built to frontend/dist — set TASKFLOW_FRONTEND_DIST_DIR and run 'make start'"
+	@echo "\n✓ frontend built to frontend/dist — run 'make start' to launch"
+
+# Ensures frontend/dist/index.html exists; builds on demand so `make start`
+# "just works" the first time.
+ensure-build:
+	@if [ ! -f frontend/dist/index.html ]; then \
+	  echo "frontend/dist/index.html not found — running 'make build' first"; \
+	  $(MAKE) build; \
+	fi
 
 # ---- Production start ----------------------------------------------------
 # Backend serves the built SPA from frontend/dist and the JSON API from the
 # same port; MCP runs on its own port. No Vite dev-server in this mode.
 # Override with:
 #   make start API_PORT=80 MCP_PORT=7391 TASKFLOW_CORS_ORIGINS=https://app.example.com
-start:
-	@echo "start → production mode (backend serves SPA + API, mcp separate)"
+start: ensure-build
+	@echo "start → production mode (backend serves SPA + API at :$(API_PORT), mcp :$(MCP_PORT))"
 	@trap 'kill 0' INT TERM EXIT; \
 	  $(MAKE) -j2 start-backend start-mcp
 

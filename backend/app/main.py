@@ -66,15 +66,19 @@ async def health() -> dict:
 # API so there is no cross-origin concern and no second process to deploy.
 # `index.html` handles client routing; unknown non-API paths fall back to it.
 def _mount_frontend() -> None:
-    if settings.env != "production" or settings.frontend_dist_dir is None:
+    if settings.env != "production":
         return
+    if settings.frontend_dist_dir is None:
+        raise RuntimeError(
+            "TASKFLOW_ENV=production requires TASKFLOW_FRONTEND_DIST_DIR to be set "
+            "(e.g. ../frontend/dist). Use `make start` or set the variable manually."
+        )
     dist = Path(settings.frontend_dist_dir)
     if not dist.exists() or not (dist / "index.html").exists():
-        # Deliberately no-op: README tells the user to `make build` first.
-        print(
-            f"[warn] production mode but frontend_dist_dir={dist} is empty — run `make build`."
+        raise RuntimeError(
+            f"TASKFLOW_FRONTEND_DIST_DIR={dist} does not contain index.html. "
+            "Run `make build` first (or `cd frontend && npm run build`)."
         )
-        return
 
     assets_dir = dist / "assets"
     if assets_dir.exists():
