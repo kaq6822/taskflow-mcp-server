@@ -1,0 +1,16 @@
+# OMC runtime state
+.omc/
+
+# Obsidian
+docs/.obsidian/
+
+# OS
+.DS_Store
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+.env
+.env.local
