@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from app.api import artifacts as artifacts_api
 from app.api import audit as audit_api
@@ -13,6 +17,7 @@ from app.api import keys as keys_api
 from app.api import runs as runs_api
 from app.api import stream as stream_api
 from app.bootstrap import ensure_admin_session
+from app.config import settings
 from app.db import SessionLocal, engine
 from app.models import Base
 from app.services.artifacts import ensure_storage_dirs
@@ -20,7 +25,6 @@ from app.services.artifacts import ensure_storage_dirs
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables if not present (first-boot friendliness; alembic still preferred)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     ensure_storage_dirs()
@@ -38,7 +42,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="TaskFlow API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=settings.effective_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,4 +58,39 @@ app.include_router(keys_api.router)
 
 @app.get("/api/health")
 async def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "env": settings.env}
+
+
+# ---- Production static SPA ------------------------------------------------
+# In production we serve the Vite `dist/` output from the same origin as the
+# API so there is no cross-origin concern and no second process to deploy.
+# `index.html` handles client routing; unknown non-API paths fall back to it.
+def _mount_frontend() -> None:
+    if settings.env != "production" or settings.frontend_dist_dir is None:
+        return
+    dist = Path(settings.frontend_dist_dir)
+    if not dist.exists() or not (dist / "index.html").exists():
+        # Deliberately no-op: README tells the user to `make build` first.
+        print(
+            f"[warn] production mode but frontend_dist_dir={dist} is empty — run `make build`."
+        )
+        return
+
+    assets_dir = dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def spa_fallback(request: Request, full_path: str) -> FileResponse:
+        # Let API and docs routes keep their 404s.
+        if full_path.startswith(("api/", "api")) or full_path in {"openapi.json", "docs", "redoc"}:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=404)
+        candidate = dist / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(dist / "index.html")
+
+
+_mount_frontend()
