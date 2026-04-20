@@ -102,11 +102,15 @@ make setup
 
 ## 실행
 
+3가지 흐름 중 하나를 고르세요. **프로덕션 배포는 B 또는 C**입니다.
+
+### A. 로컬 개발 (hot-reload)
+
 ```sh
 make dev
 ```
 
-3개 프로세스가 동시에 뜬다:
+세 프로세스가 동시에 뜹니다:
 
 | 프로세스 | 포트 | 역할 |
 |---|---|---|
@@ -114,11 +118,32 @@ make dev
 | MCP Server | `http://localhost:7391/mcp` | MCP 엔드포인트 (Bearer 인증) |
 | Frontend | `http://localhost:5173` | React UI (API는 Vite 프록시) |
 
-**첫 실행 시** Backend가 admin 세션 토큰을 한 번 콘솔에 출력한다. 지금은 UI 로그인이 활성화되지 않아 바로 UI를 쓸 수 있지만, 토큰은 향후 UI 인증 활성화 시를 위해 기록해 두는 편을 권장한다.
+접속: **http://localhost:5173** → Dashboard → `+ 새 Job`. 첫 실행 시 Backend가 admin 세션 토큰을 한 번 콘솔에 출력한다(향후 UI 인증 활성화용).
 
-브라우저에서 http://localhost:5173 을 열면 **"등록된 Job이 없습니다"** 빈 상태가 보인다.
+> Vite 기본 설정은 `localhost`에만 바인드합니다. `curl http://127.0.0.1:5173`이 거부되면 `curl http://localhost:5173`을 쓰세요. 원격 접근은 `make dev-lan` 사용.
 
-> **IPv4 바인딩 주의**: Vite 기본 설정은 `localhost`에만 바인드한다. `curl http://127.0.0.1:5173`은 실패할 수 있으니 `curl http://localhost:5173`을 쓰라.
+### B. 프로덕션 (foreground)
+
+```sh
+make setup        # 1회
+make build        # frontend/dist 생성
+make start        # backend가 SPA+API 통합 서빙(:8000), mcp(:7391) 별도
+```
+
+접속: **http://localhost:8000** (Vite 불필요, same-origin이라 CORS 이슈 없음). `Ctrl+C`로 정지.
+
+### C. 프로덕션 (background, 로그아웃 후에도 유지)
+
+```sh
+make setup
+make build
+make start-bg     # nohup 기반. logs/{backend,mcp}.pid + logs/taskflow.log 생성
+make logs         # tail -f logs/taskflow.log
+make status       # running 여부 · pid · port
+make stop         # 정지 (pidfile + pkill fallback)
+```
+
+이후 포트/바인딩 변경은 `make start-bg API_PORT=80 MCP_PORT=7391` 식으로.
 
 ---
 
