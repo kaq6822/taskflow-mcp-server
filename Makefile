@@ -1,6 +1,8 @@
 .PHONY: setup setup-backend setup-frontend dev dev-backend dev-mcp dev-frontend \
         dev-lan dev-lan-backend dev-lan-mcp dev-lan-frontend \
-        build start start-backend start-mcp test migrate reset clean
+        build ensure-build start start-backend start-mcp \
+        start-bg stop status logs \
+        test migrate reset clean
 
 PY := python3
 VENV := backend/.venv
@@ -17,6 +19,12 @@ MCP_HOST       ?= 0.0.0.0
 MCP_PORT       ?= 7391
 FRONTEND_HOST  ?= localhost
 FRONTEND_PORT  ?= 5173
+
+# Background bookkeeping — keeps pid + log files out of the app code
+LOG_DIR        := logs
+LOG_FILE       := $(LOG_DIR)/taskflow.log
+BACKEND_PID    := $(LOG_DIR)/backend.pid
+MCP_PID        := $(LOG_DIR)/mcp.pid
 
 # ---- Setup ---------------------------------------------------------------
 setup: setup-backend setup-frontend migrate
@@ -94,6 +102,30 @@ start-mcp:
 	cd backend && TASKFLOW_ENV=production TASKFLOW_MCP_HOST=$(MCP_HOST) TASKFLOW_MCP_PORT=$(MCP_PORT) \
 	  ../$(PYBIN)/python -m app.mcp_server
 
+# ---- Background (production) --------------------------------------------
+# Delegates to shell scripts under scripts/ so the logic stays readable and
+# portable (Make recipes + `&` + `$!` compose poorly).
+start-bg: ensure-build
+	@API_HOST=$(API_HOST) API_PORT=$(API_PORT) MCP_HOST=$(MCP_HOST) MCP_PORT=$(MCP_PORT) \
+	  LOG_DIR=$(LOG_DIR) LOG_FILE=$(LOG_FILE) \
+	  BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	  bash scripts/start-bg.sh
+
+stop:
+	@LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	  bash scripts/stop.sh
+
+status:
+	@API_PORT=$(API_PORT) MCP_PORT=$(MCP_PORT) \
+	  LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	  bash scripts/status.sh
+
+logs:
+	@if [ ! -f $(LOG_FILE) ]; then \
+	  echo "no log at $(LOG_FILE). did you 'make start-bg'?"; exit 1; \
+	fi
+	@tail -f $(LOG_FILE)
+
 # ---- Ops ------------------------------------------------------------------
 test:
 	cd backend && ../$(PYTEST) -v
@@ -107,3 +139,4 @@ clean:
 	rm -rf $(VENV) frontend/node_modules frontend/dist
 	rm -f backend/taskflow.db
 	rm -rf backend/storage
+	rm -rf $(LOG_DIR)

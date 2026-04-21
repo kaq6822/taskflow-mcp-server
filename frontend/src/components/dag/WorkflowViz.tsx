@@ -1,7 +1,6 @@
 // DAG / List / Timeline views, ported from proto/components/dag.jsx (algorithm only).
 
 import { Step } from '../../api/client';
-import { useStore } from '../../store/store';
 
 type StepsLike = { steps: Step[] };
 type RunStateLike = {
@@ -233,9 +232,8 @@ export function TimelineView({ job, runState }: VizProps) {
   );
 }
 
+// Prototype also sketched ListView / TimelineView togglable via the Tweaks
+// panel. That panel was design-only; production uses DAG exclusively.
 export function WorkflowViz(props: VizProps) {
-  const viz = useStore((s) => s.viz);
-  if (viz === 'list') return <ListView {...props} />;
-  if (viz === 'timeline') return <TimelineView {...props} />;
   return <DagView {...props} />;
 }

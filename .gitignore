@@ -32,3 +32,4 @@ taskflow.db-journal
 taskflow.db-wal
 taskflow.db-shm
 storage/
+logs/

@@ -3,7 +3,6 @@ import { useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Toasts } from './components/Toasts';
 import { Topbar } from './components/Topbar';
-import { TweaksPanel } from './components/TweaksPanel';
 import { Artifacts } from './screens/Artifacts';
 import { Audit } from './screens/Audit';
 import { Builder } from './screens/Builder';
@@ -27,13 +26,14 @@ const screens: Record<Screen, () => JSX.Element> = {
 
 export function App() {
   const screen = useStore((s) => s.screen);
-  const viz = useStore((s) => s.viz);
-  const density = useStore((s) => s.density);
   const refreshAll = useStore((s) => s.refreshAll);
 
   useEffect(() => {
-    document.body.className = `density-${density} viz-${viz}`;
-  }, [density, viz]);
+    // The design system ships with DAG viz + compact density as the fixed
+    // production look. The per-user toggle was a prototype-only feature and
+    // is not part of this app.
+    document.body.className = 'density-compact viz-dag';
+  }, []);
 
   useEffect(() => {
     refreshAll().catch(() => {
@@ -52,7 +52,6 @@ export function App() {
         </div>
       </div>
       <Toasts />
-      <TweaksPanel />
     </div>
   );
 }
