@@ -1,5 +1,7 @@
 # TaskFlow MCP Server — 문서
 
+**🌐 Language / 언어:** [한국어](./README.md) · [English](./README.en.md)
+
 이 폴더는 두 종류의 문서를 담고 있습니다:
 
 1. **사용자/운영자 가이드** — 설치부터 운영까지. README의 링크 대상.

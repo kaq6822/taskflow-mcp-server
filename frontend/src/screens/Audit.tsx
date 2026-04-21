@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 function StatBlock({
@@ -21,6 +22,7 @@ function StatBlock({
 }
 
 export function Audit() {
+  const t = useT();
   const audit = useStore((s) => s.audit);
 
   const [kindF, setKindF] = useState('all');
@@ -104,7 +106,7 @@ export function Audit() {
 
       {audit.length === 0 ? (
         <div style={{ padding: '40px 18px', textAlign: 'center' }}>
-          <div style={{ color: 'var(--ink-3)' }}>감사 이벤트가 없습니다.</div>
+          <div style={{ color: 'var(--ink-3)' }}>{t.no_audit_events}</div>
         </div>
       ) : (
         <>

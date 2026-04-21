@@ -1,5 +1,7 @@
 # TaskFlow MCP Server
 
+**🌐 Language / 언어:** [한국어](./README.md) · [English](./README.en.md)
+
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![node](https://img.shields.io/badge/node-20%2B-brightgreen)
 ![mcp](https://img.shields.io/badge/MCP-Streamable%20HTTP-8A2BE2)

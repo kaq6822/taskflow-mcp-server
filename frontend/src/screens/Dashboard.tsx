@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 import { Run } from '../api/client';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 function KpiCard({
@@ -43,6 +44,7 @@ function KpiCard({
 }
 
 export function Dashboard() {
+  const t = useT();
   const jobs = useStore((s) => s.jobs);
   const runs = useStore((s) => s.runs);
   const keys = useStore((s) => s.keys);
@@ -91,7 +93,7 @@ export function Dashboard() {
             setScreen('builder');
           }}
         >
-          + 새 Job
+          {t.btn_new_job}
         </button>
       </div>
 
@@ -103,22 +105,22 @@ export function Dashboard() {
           gap: 12,
         }}
       >
-        <KpiCard label="총 Job" value={jobs.length} />
-        <KpiCard label="실행 중" value={liveRun ? 1 : 0} tone="info" />
+        <KpiCard label={t.kpi_total_jobs} value={jobs.length} />
+        <KpiCard label={t.kpi_running} value={liveRun ? 1 : 0} tone="info" />
         <KpiCard
-          label="최근 실패"
+          label={t.kpi_recent_fails}
           value={recentFailed}
           tone={recentFailed > 0 ? 'err' : 'ok'}
-          sub={`${runs.length}개 중`}
+          sub={`${runs.length}`}
         />
-        <KpiCard label="스케줄 등록" value={scheduled} sub="cron jobs" />
+        <KpiCard label={t.kpi_scheduled} value={scheduled} sub="cron jobs" />
       </div>
 
       {jobs.length === 0 ? (
         <div style={{ padding: '40px 18px', textAlign: 'center' }}>
           <div style={{ fontSize: 40, color: 'var(--ink-4)', marginBottom: 10 }}>◌</div>
           <div style={{ color: 'var(--ink-3)', marginBottom: 16 }}>
-            등록된 Job이 없습니다. <b>+ 새 Job</b> 으로 첫 Workflow를 정의하세요.
+            {t.dashboard_empty} <b>{t.btn_new_job}</b> — {t.dashboard_empty_hint}
           </div>
           <button
             className="btn primary"
@@ -127,7 +129,7 @@ export function Dashboard() {
               setScreen('builder');
             }}
           >
-            + 새 Job 만들기
+            {t.btn_new_job_create}
           </button>
         </div>
       ) : (
@@ -140,19 +142,19 @@ export function Dashboard() {
               alignItems: 'center',
             }}
           >
-            {tags.map((t) => (
+            {tags.map((tg) => (
               <span
-                key={t}
-                className={`chip ${tag === t ? 'accent' : ''}`}
+                key={tg}
+                className={`chip ${tag === tg ? 'accent' : ''}`}
                 style={{ cursor: 'pointer' }}
-                onClick={() => setTag(t)}
+                onClick={() => setTag(tg)}
               >
-                {t}
+                {tg}
               </span>
             ))}
             <div className="spacer" />
             <span className="muted mono" style={{ fontSize: 11 }}>
-              {filtered.length} / {jobs.length} 표시
+              {t.dashboard_showing(filtered.length, jobs.length)}
             </span>
           </div>
 
@@ -164,7 +166,7 @@ export function Dashboard() {
                 <th>Schedule</th>
                 <th>Last run</th>
                 <th>Status</th>
-                <th>성공률</th>
+                <th>{t.col_success_rate}</th>
                 <th>Steps</th>
                 <th>Runs</th>
                 <th style={{ width: 120 }} />
@@ -246,7 +248,7 @@ export function Dashboard() {
                         }}
                         disabled={!!liveRun}
                       >
-                        ▷ 실행
+                        {t.btn_run}
                       </button>
                     </td>
                   </tr>
@@ -264,9 +266,9 @@ export function Dashboard() {
             }}
           >
             <div className="card">
-              <div className="ctitle">최근 실행 · {runs.slice(0, 20).length}개</div>
+              <div className="ctitle">{t.recent_runs(runs.slice(0, 20).length)}</div>
               {runs.length === 0 ? (
-                <div className="mono-s dim">아직 실행 내역이 없습니다.</div>
+                <div className="mono-s dim">{t.no_runs}</div>
               ) : (
                 <>
                   <div
@@ -304,7 +306,7 @@ export function Dashboard() {
                     ))}
                   </div>
                   <div className="mono-s dim">
-                    높이 = 실행 시간 · 색 = 상태 · 클릭 시 로그 이동
+                    {t.run_chart_hint}
                   </div>
                 </>
               )}

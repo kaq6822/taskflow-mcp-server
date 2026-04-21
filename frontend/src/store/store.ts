@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 
 import { api, Artifact, AuditEvent, Job, Key, Run, RunStep } from '../api/client';
 import { subscribeRun } from '../api/sse';
+import { Lang, translations } from '../i18n/translations';
 
 export type Screen =
   | 'dashboard'
@@ -39,10 +40,12 @@ type State = {
 
   liveRun: LiveRun | null;
   toasts: Toast[];
+  lang: Lang;
 
   setScreen: (s: Screen) => void;
   setSelectedJobId: (id: string | null) => void;
   setSelectedRunId: (id: number | null) => void;
+  setLang: (l: Lang) => void;
 
   refreshJobs: () => Promise<unknown>;
   refreshRuns: () => Promise<unknown>;
@@ -73,10 +76,12 @@ export const useStore = create<State>()(
 
       liveRun: null,
       toasts: [],
+      lang: 'ko' as Lang,
 
       setScreen: (s) => set({ screen: s }),
       setSelectedJobId: (id) => set({ selectedJobId: id }),
       setSelectedRunId: (id) => set({ selectedRunId: id }),
+      setLang: (l) => set({ lang: l }),
 
       refreshJobs: async () => set({ jobs: await api.listJobs() }),
       refreshRuns: async () => set({ runs: await api.listRuns({ limit: 50 }) }),
@@ -116,7 +121,7 @@ export const useStore = create<State>()(
             status: 'RUNNING',
           };
           set({ liveRun: live });
-          get().pushToast(`Run #${run.id} 시작`);
+          get().pushToast(translations[get().lang].toast_run_started(run.id));
 
           const close = subscribeRun(run.id, (ev) => {
             const cur = get().liveRun;
@@ -149,7 +154,7 @@ export const useStore = create<State>()(
                 selectedRunId: run.id,
               });
               get().pushToast(
-                `Run #${run.id} 완료 · ${status}`,
+                translations[get().lang].toast_run_done(run.id, status),
                 status === 'SUCCESS' ? 'ok' : 'err'
               );
               close();
@@ -159,7 +164,7 @@ export const useStore = create<State>()(
           });
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
-          get().pushToast(`Run 시작 실패: ${msg}`, 'err');
+          get().pushToast(translations[get().lang].toast_run_start_fail(msg), 'err');
         }
       },
 
@@ -169,7 +174,7 @@ export const useStore = create<State>()(
         try {
           await api.cancelRun(live.id);
           set({ liveRun: null });
-          get().pushToast('Run이 취소되었습니다', 'err');
+          get().pushToast(translations[get().lang].toast_run_cancelled, 'err');
           get().refreshRuns();
         } catch (e) {
           /* ignore */
@@ -182,6 +187,7 @@ export const useStore = create<State>()(
         screen: s.screen,
         selectedJobId: s.selectedJobId,
         selectedRunId: s.selectedRunId,
+        lang: s.lang,
       }),
     }
   )

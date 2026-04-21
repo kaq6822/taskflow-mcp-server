@@ -1,6 +1,8 @@
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 export function Monitor() {
+  const t = useT();
   const liveRun = useStore((s) => s.liveRun);
   const runs = useStore((s) => s.runs);
   const jobs = useStore((s) => s.jobs);
@@ -15,32 +17,32 @@ export function Monitor() {
       <div>
         <div className="page-head">
           <h1>Runs</h1>
-          <span className="sub">실행 모니터</span>
+          <span className="sub">{t.sub_run_monitor}</span>
         </div>
         <div style={{ padding: '40px 18px', textAlign: 'center' }}>
           <div style={{ fontSize: 40, color: 'var(--ink-4)', marginBottom: 10 }}>◌</div>
           <div style={{ color: 'var(--ink-3)', marginBottom: 16 }}>
-            현재 실행 중인 Run이 없습니다
+            {t.no_active_run}
           </div>
           {selectedJobId && (
             <button className="btn primary" onClick={() => startRun(selectedJobId)}>
-              ▷ {selectedJobId} 실행
+              ▷ {selectedJobId}
             </button>
           )}
           <div className="hr" />
           <div style={{ textAlign: 'left' }}>
-            <div className="ctitle" style={{ marginBottom: 8 }}>최근 Run 이력</div>
+            <div className="ctitle" style={{ marginBottom: 8 }}>{t.recent_run_history}</div>
             {runs.length === 0 ? (
-              <div className="mono-s dim">아직 실행 내역이 없습니다.</div>
+              <div className="mono-s dim">{t.no_runs}</div>
             ) : (
               <table className="tbl">
                 <thead>
                   <tr>
                     <th>Run</th>
                     <th>Job</th>
-                    <th>시작</th>
-                    <th>소요</th>
-                    <th>상태</th>
+                    <th>{t.col_start}</th>
+                    <th>{t.col_duration}</th>
+                    <th>{t.col_status}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -217,14 +219,14 @@ export function Monitor() {
             overflow: 'auto',
           }}
         >
-          <div className="ctitle">Run 정보</div>
+          <div className="ctitle">{t.run_info}</div>
           <div className="kv">
             <div className="k">trigger</div>
             <div className="v">web</div>
             <div className="k">elapsed</div>
             <div className="v">{liveRun.dur.toFixed(1)}s</div>
           </div>
-          <div className="ctitle" style={{ marginTop: 12 }}>정책</div>
+          <div className="ctitle" style={{ marginTop: 12 }}>{t.policy}</div>
           <div className="mono-s" style={{ lineHeight: 1.8 }}>
             <div>
               <span className="chip ok">shell=False</span>

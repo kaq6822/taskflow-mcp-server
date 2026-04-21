@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { api } from '../api/client';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 function StatBlock({
@@ -22,6 +23,7 @@ function StatBlock({
 }
 
 export function McpKeys() {
+  const t = useT();
   const keys = useStore((s) => s.keys);
   const audit = useStore((s) => s.audit);
   const refreshKeys = useStore((s) => s.refreshKeys);
@@ -58,11 +60,11 @@ export function McpKeys() {
   const handleRevoke = async (id: string) => {
     try {
       await api.revokeKey(id);
-      pushToast('Key가 revoke 되었습니다', 'err');
+      pushToast(t.toast_key_revoked, 'err');
       await refreshKeys();
       await refreshAudit();
     } catch (e) {
-      pushToast(`revoke 실패: ${String(e)}`, 'err');
+      pushToast(t.toast_revoke_fail(String(e)), 'err');
     }
   };
 
@@ -73,7 +75,7 @@ export function McpKeys() {
         <span className="sub mono">http://localhost:7391/mcp</span>
         <div className="spacer" />
         <button className="btn primary sm" onClick={() => setIssuing(true)}>
-          + 새 Key 발급
+          {t.btn_issue_key}
         </button>
       </div>
 
@@ -103,7 +105,7 @@ export function McpKeys() {
         {keys.length === 0 ? (
           <div style={{ padding: '40px 0', textAlign: 'center' }}>
             <div style={{ fontSize: 40, color: 'var(--ink-4)', marginBottom: 10 }}>⚹</div>
-            <div style={{ color: 'var(--ink-3)' }}>발급된 Key가 없습니다.</div>
+            <div style={{ color: 'var(--ink-3)' }}>{t.no_keys}</div>
           </div>
         ) : (
           <table className="tbl">
@@ -112,10 +114,10 @@ export function McpKeys() {
                 <th>Label</th>
                 <th>Key</th>
                 <th>Scopes</th>
-                <th>생성</th>
-                <th>만료</th>
+                <th>{t.col_created}</th>
+                <th>{t.col_expires}</th>
                 <th>Rate limit</th>
-                <th>상태</th>
+                <th>{t.col_status}</th>
                 <th />
               </tr>
             </thead>
@@ -166,7 +168,7 @@ export function McpKeys() {
           }}
         >
           <div className="card">
-            <div className="ctitle">연결 예시 · Claude Desktop</div>
+            <div className="ctitle">{t.connection_example}</div>
             <div className="console" style={{ fontSize: 10 }}>
               <div className="ln">
                 <span className="lvl-dim"># ~/.config/claude/mcp.json</span>
@@ -195,7 +197,7 @@ export function McpKeys() {
             </div>
           </div>
           <div className="card">
-            <div className="ctitle">최근 MCP 호출</div>
+            <div className="ctitle">{t.recent_mcp_calls}</div>
             <table className="tbl" style={{ fontSize: 11 }}>
               <thead>
                 <tr>
@@ -234,7 +236,7 @@ export function McpKeys() {
                 {audit.filter((a) => a.src === 'mcp').length === 0 && (
                   <tr>
                     <td colSpan={4} className="mono-s dim">
-                      MCP 호출이 없습니다.
+                      {t.no_mcp_calls}
                     </td>
                   </tr>
                 )}
@@ -250,6 +252,7 @@ export function McpKeys() {
 }
 
 function IssueKeyModal({ onClose }: { onClose: () => void }) {
+  const t = useT();
   const refreshKeys = useStore((s) => s.refreshKeys);
   const refreshAudit = useStore((s) => s.refreshAudit);
   const jobs = useStore((s) => s.jobs);
@@ -285,16 +288,18 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
       await refreshKeys();
       await refreshAudit();
     } catch (e) {
-      pushToast(`발급 실패: ${String(e)}`, 'err');
+      pushToast(t.toast_issue_fail(String(e)), 'err');
     }
   };
+
+  const dayLabel = (d: number) => (d === 30 ? '30 days' : d === 90 ? '90 days' : '180 days');
 
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         {!issued ? (
           <>
-            <h3>새 Key 발급</h3>
+            <h3>{t.modal_issue_title}</h3>
             <div className="col" style={{ gap: 10 }}>
               <div>
                 <label className="mono-s dim">Label</label>
@@ -302,7 +307,7 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
                   className="input"
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
-                  placeholder="claude · 스테이징"
+                  placeholder="claude · staging"
                 />
               </div>
               <div>
@@ -340,15 +345,15 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
               </div>
               <div className="split s2" style={{ gap: 10 }}>
                 <div>
-                  <label className="mono-s dim">만료 기간</label>
+                  <label className="mono-s dim">{t.expires_period}</label>
                   <select
                     className="select"
                     value={exp}
                     onChange={(e) => setExp(Number(e.target.value) as 30 | 90 | 180)}
                   >
-                    <option value={30}>30일</option>
-                    <option value={90}>90일</option>
-                    <option value={180}>180일</option>
+                    <option value={30}>{dayLabel(30)}</option>
+                    <option value={90}>{dayLabel(90)}</option>
+                    <option value={180}>{dayLabel(180)}</option>
                   </select>
                 </div>
                 <div>
@@ -367,19 +372,19 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="row" style={{ marginTop: 16 }}>
               <button className="btn ghost" onClick={onClose}>
-                취소
+                {t.cancel}
               </button>
               <div className="spacer" />
               <button className="btn primary" onClick={submit} disabled={!label}>
-                Key 발급
+                {t.btn_key_issue}
               </button>
             </div>
           </>
         ) : (
           <>
-            <h3 style={{ color: 'var(--accent)' }}>✓ Key가 발급되었습니다</h3>
+            <h3 style={{ color: 'var(--accent)' }}>{t.key_issued_title}</h3>
             <div className="mono-s dim" style={{ marginBottom: 8 }}>
-              이 Key는 지금만 표시됩니다. 안전하게 보관하세요.
+              {t.key_issued_hint}
             </div>
             <div className="console" style={{ fontSize: 11, wordBreak: 'break-all' }}>
               <div className="ln">
@@ -393,11 +398,11 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
                   navigator.clipboard.writeText(issued);
                 }}
               >
-                ⎘ 복사
+                {t.btn_copy}
               </button>
               <div className="spacer" />
               <button className="btn primary" onClick={onClose}>
-                완료
+                {t.done}
               </button>
             </div>
           </>

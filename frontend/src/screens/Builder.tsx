@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { ApiError, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 import { YamlRender } from './JobDetail';
 
@@ -38,6 +39,7 @@ const EMPTY: Draft = {
 };
 
 export function Builder() {
+  const t = useT();
   const selectedJobId = useStore((s) => s.selectedJobId);
   const jobs = useStore((s) => s.jobs);
   const setSelectedJobId = useStore((s) => s.setSelectedJobId);
@@ -92,30 +94,30 @@ export function Builder() {
 
   const step = draft.steps.find((s) => s.id === selStep) || draft.steps[0];
 
-  const validation = useMemo(() => validateDraft(draft), [draft]);
+  const validation = useMemo(() => validateDraft(draft, t), [draft, t]);
 
   const save = async () => {
     if (!validation.ok) {
-      pushToast(`검증 실패: ${validation.errors[0]}`, 'err');
+      pushToast(t.toast_validation_fail(validation.errors[0]), 'err');
       return;
     }
     setSaving(true);
     try {
       if (existing) {
         await api.updateJob(existing.id, draft);
-        pushToast('저장되었습니다');
+        pushToast(t.toast_save_ok);
       } else {
         const created = await api.createJob(draft);
         setSelectedJobId(created.id);
-        pushToast('Job이 생성되었습니다');
+        pushToast(t.toast_job_created);
       }
       await refreshJobs();
       setDirty(false);
     } catch (e) {
       if (e instanceof ApiError) {
-        pushToast(`저장 실패: ${JSON.stringify(e.detail)}`, 'err');
+        pushToast(t.toast_save_fail(JSON.stringify(e.detail)), 'err');
       } else {
-        pushToast(`저장 실패: ${String(e)}`, 'err');
+        pushToast(t.toast_save_fail(String(e)), 'err');
       }
     } finally {
       setSaving(false);
@@ -125,7 +127,7 @@ export function Builder() {
   return (
     <div>
       <div className="page-head">
-        <h1>{draft.id || '(신규 Job)'}</h1>
+        <h1>{draft.id || t.new_job_title}</h1>
         <span className="sub">Workflow editor</span>
         {dirty && <span className="chip warn">unsaved</span>}
         <div
@@ -140,10 +142,10 @@ export function Builder() {
         </div>
         <div className="spacer" />
         <button className="btn ghost sm" onClick={() => setScreen(existing ? 'detail' : 'dashboard')}>
-          ← 돌아가기
+          {t.btn_back}
         </button>
         <button className="btn primary sm" onClick={save} disabled={saving}>
-          {saving ? '저장 중…' : '저장'}
+          {saving ? t.saving : t.save}
         </button>
       </div>
 
@@ -182,21 +184,21 @@ export function Builder() {
 }
 
 type ValidationResult = { ok: boolean; errors: string[] };
-function validateDraft(d: Draft): ValidationResult {
+function validateDraft(d: Draft, t: ReturnType<typeof useT>): ValidationResult {
   const errs: string[] = [];
-  if (!/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push('id는 kebab-case 소문자');
-  if (!d.name) errs.push('name 필요');
+  if (!/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
+  if (!d.name) errs.push(t.err_name_required);
   const ids = new Set<string>();
   for (const s of d.steps) {
-    if (!s.id) errs.push('step.id 필요');
-    else if (ids.has(s.id)) errs.push(`중복 step id: ${s.id}`);
+    if (!s.id) errs.push(t.err_step_id_required);
+    else if (ids.has(s.id)) errs.push(t.err_step_id_dup(s.id));
     ids.add(s.id);
     if (!Array.isArray(s.cmd) || s.cmd.length === 0 || s.cmd.some((c) => typeof c !== 'string'))
       errs.push(`${s.id}: cmd must be argv array`);
   }
   for (const s of d.steps) {
     for (const dep of s.deps || []) {
-      if (!ids.has(dep)) errs.push(`${s.id}: unknown dep ${dep}`);
+      if (!ids.has(dep)) errs.push(t.err_dep_unknown(s.id, dep));
     }
   }
   return { ok: errs.length === 0, errors: errs };
@@ -215,6 +217,7 @@ function CanvasView({
   selStep: string | null;
   setSelStep: (id: string) => void;
 }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -224,7 +227,7 @@ function CanvasView({
       }}
     >
       <div style={{ borderRight: '1px solid var(--line)', padding: 10, background: 'var(--bg-2)' }}>
-        <div className="ctitle">팔레트</div>
+        <div className="ctitle">{t.palette}</div>
         <button
           className="btn sm ghost"
           style={{ width: '100%', marginBottom: 4 }}
@@ -240,11 +243,8 @@ function CanvasView({
             setSelStep(newId);
           }}
         >
-          + Step 추가
+          {t.add_step}
         </button>
-        <div className="mono-s dim" style={{ marginTop: 10 }}>
-          Step 클릭으로 편집 →
-        </div>
       </div>
       <div style={{ padding: 14 }}>
         <DagView
@@ -253,7 +253,7 @@ function CanvasView({
           onStepClick={(id) => setSelStep(id)}
         />
         <div className="mono-s dim" style={{ marginTop: 8 }}>
-          Step을 클릭해 우측 Inspector에서 편집. argv는 <b>shell=False</b> — 리스트만 허용.
+          {t.canvas_cmd_hint}
         </div>
       </div>
       <div
@@ -281,6 +281,7 @@ function Inspector({
   setDraft: (d: Draft) => void;
   step: Step;
 }) {
+  const t = useT();
   const patch = (u: Partial<Step>) => {
     setDraft({ ...draft, steps: draft.steps.map((s) => (s.id === step.id ? { ...s, ...u } : s)) });
   };
@@ -329,7 +330,6 @@ function Inspector({
                 const parsed = JSON.parse(cmdText);
                 if (Array.isArray(parsed)) patch({ cmd: parsed });
               } catch {
-                /* invalid JSON — revert */
                 setCmdText(JSON.stringify(step.cmd));
               }
             }}
@@ -378,7 +378,7 @@ function Inspector({
       </div>
       <div className="row" style={{ marginTop: 8 }}>
         <button className="btn sm danger" style={{ marginLeft: 'auto' }} onClick={deleteStep}>
-          이 Step 삭제
+          {t.delete_step}
         </button>
       </div>
     </div>
@@ -386,9 +386,10 @@ function Inspector({
 }
 
 function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) => void }) {
+  const t = useT();
   return (
     <div>
-      <div className="ctitle">Job 메타</div>
+      <div className="ctitle">{t.job_meta}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
           <label className="mono-s dim">ID (kebab-case)</label>
@@ -462,7 +463,7 @@ function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) =>
             className="input mono sm"
             value={draft.tags.join(',')}
             onChange={(e) =>
-              setDraft({ ...draft, tags: e.target.value.split(',').map((t) => t.trim()).filter(Boolean) })
+              setDraft({ ...draft, tags: e.target.value.split(',').map((tg) => tg.trim()).filter(Boolean) })
             }
           />
         </div>
@@ -486,6 +487,7 @@ function YamlView({
   draft: Draft;
   validation: ValidationResult;
 }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -500,17 +502,17 @@ function YamlView({
         </div>
       </div>
       <div style={{ borderLeft: '1px solid var(--line)', padding: 12, background: 'var(--bg-2)' }}>
-        <div className="ctitle">검증</div>
+        <div className="ctitle">{t.validation_panel}</div>
         {validation.ok ? (
           <div className="col mono-s" style={{ gap: 5 }}>
             <div>
-              <span style={{ color: 'var(--ok)' }}>✓</span> 모든 step id 고유
+              <span style={{ color: 'var(--ok)' }}>✓</span> {t.validation_unique_ids}
             </div>
             <div>
-              <span style={{ color: 'var(--ok)' }}>✓</span> 의존성 참조 유효
+              <span style={{ color: 'var(--ok)' }}>✓</span> {t.validation_deps_valid}
             </div>
             <div>
-              <span style={{ color: 'var(--ok)' }}>✓</span> argv 배열 (shell=False)
+              <span style={{ color: 'var(--ok)' }}>✓</span> {t.validation_argv}
             </div>
           </div>
         ) : (
@@ -540,6 +542,7 @@ function FormView({
   selStep: string | null;
   setSelStep: (id: string) => void;
 }) {
+  const t = useT();
   return (
     <div
       style={{
@@ -583,7 +586,7 @@ function FormView({
             setSelStep(newId);
           }}
         >
-          + Step 추가
+          {t.add_step}
         </button>
       </div>
       <div style={{ padding: 18, maxWidth: 680 }}>
