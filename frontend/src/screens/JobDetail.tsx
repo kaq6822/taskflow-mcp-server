@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import { Job, Run } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 function fmtDur(s: number): string {
@@ -12,6 +13,7 @@ function fmtDur(s: number): string {
 }
 
 export function JobDetail() {
+  const t = useT();
   const jobs = useStore((s) => s.jobs);
   const runs = useStore((s) => s.runs);
   const selectedJobId = useStore((s) => s.selectedJobId);
@@ -25,7 +27,7 @@ export function JobDetail() {
   if (!job) {
     return (
       <div style={{ padding: 20 }}>
-        <div className="mono-s dim">Job을 선택하세요.</div>
+        <div className="mono-s dim">{t.select_job_prompt}</div>
         <button className="btn sm" style={{ marginTop: 10 }} onClick={() => setScreen('dashboard')}>
           ← Dashboard
         </button>
@@ -51,9 +53,9 @@ export function JobDetail() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
-          {job.tags.map((t) => (
-            <span key={t} className="chip">
-              {t}
+          {job.tags.map((tg) => (
+            <span key={tg} className="chip">
+              {tg}
             </span>
           ))}
         </div>
@@ -66,14 +68,14 @@ export function JobDetail() {
           onClick={() => startRun(job.id)}
           disabled={!!liveRun}
         >
-          ▷ 실행
+          {t.btn_run}
         </button>
       </div>
 
       <div className="tabs" style={{ paddingLeft: 18 }}>
         {([
-          ['overview', '개요'],
-          ['runs', `Run 이력 · ${jobRuns.length}`],
+          ['overview', t.tab_overview],
+          ['runs', t.tab_runs(jobRuns.length)],
           ['yaml', 'YAML'],
         ] as const).map(([k, l]) => (
           <div
@@ -106,6 +108,7 @@ function OverviewTab({
   successRate: number;
   avgDur: number;
 }) {
+  const t = useT();
   const setScreen = useStore((s) => s.setScreen);
   const liveRun = useStore((s) => s.liveRun);
   const liveStepStates =
@@ -126,13 +129,13 @@ function OverviewTab({
           <div className="ctitle">Workflow · {job.steps.length} steps</div>
           <DagView job={job} runState={liveStepStates} compact />
           <div className="mono-s dim" style={{ marginTop: 8 }}>
-            실행 중에는 상태 색상이 변경됩니다.
+            {t.running_colors_hint}
           </div>
         </div>
         <div className="card">
-          <div className="ctitle">최근 Run 활동</div>
+          <div className="ctitle">{t.recent_run_activity}</div>
           {runs.length === 0 ? (
-            <div className="mono-s dim">아직 실행 내역이 없습니다.</div>
+            <div className="mono-s dim">{t.no_runs}</div>
           ) : (
             <>
               <div
@@ -166,13 +169,13 @@ function OverviewTab({
               </div>
               <div style={{ display: 'flex', gap: 20 }}>
                 <span className="mono-s dim">
-                  성공률 <span style={{ color: 'var(--ok)' }}>{successRate}%</span>
+                  {t.success_rate} <span style={{ color: 'var(--ok)' }}>{successRate}%</span>
                 </span>
                 <span className="mono-s dim">
-                  평균 <span style={{ color: 'var(--ink)' }}>{avgDur}s</span>
+                  {t.avg} <span style={{ color: 'var(--ink)' }}>{avgDur}s</span>
                 </span>
                 <span className="mono-s dim">
-                  총 <span style={{ color: 'var(--ink)' }}>{runs.length}</span> runs
+                  {t.total} <span style={{ color: 'var(--ink)' }}>{runs.length}</span> runs
                 </span>
               </div>
             </>
@@ -181,7 +184,7 @@ function OverviewTab({
       </div>
       <div className="col" style={{ gap: 14 }}>
         <div className="card">
-          <div className="ctitle">설정</div>
+          <div className="ctitle">{t.settings}</div>
           <div className="kv">
             <div className="k">Owner</div>
             <div className="v">{job.owner}</div>
@@ -206,13 +209,13 @@ function OverviewTab({
           </div>
         </div>
         <div className="card">
-          <div className="ctitle">정책 (강제)</div>
+          <div className="ctitle">{t.policy_enforced}</div>
           <div className="mono-s" style={{ lineHeight: 1.8 }}>
             <div>
-              <span className="chip ok">allowlist</span> argv 기반
+              <span className="chip ok">allowlist</span> {t.allowlist_argv}
             </div>
             <div>
-              <span className="chip ok">shell=False</span> 강제
+              <span className="chip ok">shell=False</span>
             </div>
             <div>
               <span className="chip">user=taskflow</span>
@@ -227,7 +230,7 @@ function OverviewTab({
         </div>
         {job.description && (
           <div className="card">
-            <div className="ctitle">설명</div>
+            <div className="ctitle">{t.description_section}</div>
             <div style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.6 }}>{job.description}</div>
           </div>
         )}
@@ -237,19 +240,20 @@ function OverviewTab({
 }
 
 function RunsTab({ runs, onOpen }: { runs: Run[]; onOpen: (id: number) => void }) {
+  const t = useT();
   if (runs.length === 0) {
-    return <div style={{ padding: 20 }} className="mono-s dim">실행 내역이 없습니다.</div>;
+    return <div style={{ padding: 20 }} className="mono-s dim">{t.no_runs_for_job}</div>;
   }
   return (
     <table className="tbl">
       <thead>
         <tr>
           <th>Run</th>
-          <th>시작</th>
-          <th>트리거</th>
-          <th>실행자</th>
-          <th>소요</th>
-          <th>상태</th>
+          <th>{t.col_start}</th>
+          <th>{t.col_trigger}</th>
+          <th>{t.col_actor}</th>
+          <th>{t.col_duration}</th>
+          <th>{t.col_status}</th>
           <th>Fail step</th>
           <th />
         </tr>

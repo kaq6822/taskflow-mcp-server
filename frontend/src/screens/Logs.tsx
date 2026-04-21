@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 
 import { Run } from '../api/client';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 export function Logs() {
+  const t = useT();
   const runs = useStore((s) => s.runs);
   const jobs = useStore((s) => s.jobs);
   const selectedRunId = useStore((s) => s.selectedRunId);
@@ -27,13 +29,9 @@ export function Logs() {
   useEffect(() => {
     setLogText('');
     if (!run || !selStep) return;
-    // fetch raw log file via the logs_path endpoint — use a simple raw route.
-    // We don't have a dedicated endpoint; read directly from /storage/logs? Instead, read via API.
     fetch(`/api/runs/${run.id}`)
       .then((r) => r.json())
       .then(() => {
-        // Simple approach: read the log file through fetch on relative /storage/logs not served.
-        // Skip raw fetch; Monitor screen shows live; Logs shows structured step info only.
         setLogText('');
       })
       .catch(() => setLogText(''));
@@ -42,12 +40,12 @@ export function Logs() {
   if (!run) {
     return (
       <div style={{ padding: 20 }} className="mono-s dim">
-        Run을 선택하세요. 먼저 Monitor 또는 Dashboard의 Run 이력에서 항목을 클릭하세요.
+        {t.select_run_prompt}
       </div>
     );
   }
   if (!job) {
-    return <div style={{ padding: 20 }} className="mono-s dim">Job 정보를 찾을 수 없습니다.</div>;
+    return <div style={{ padding: 20 }} className="mono-s dim">{t.job_not_found}</div>;
   }
 
   const failedId = run.failed_step;
@@ -79,7 +77,7 @@ export function Logs() {
           onClick={() => startRun(job.id)}
           disabled={!!liveRun}
         >
-          재실행
+          {t.rerun}
         </button>
       </div>
 
@@ -141,7 +139,7 @@ export function Logs() {
             );
           })}
           <div className="hr" />
-          <div className="ctitle">요약</div>
+          <div className="ctitle">{t.summary}</div>
           <div className="kv">
             <div className="k">result</div>
             <div
@@ -194,7 +192,7 @@ export function Logs() {
             <div className="ln">
               <span className="ts" />
               <span className="lvl-dim">
-                로그 파일 경로: storage/logs/{run.id}/{selStep}.log
+                {t.log_path_hint(run.id, selStep || '')}
               </span>
             </div>
             {curStep && (
@@ -206,21 +204,21 @@ export function Logs() {
             <div className="ln">
               <span className="ts" />
               <span className="lvl-dim">
-                라이브 출력은 Monitor 화면 / MCP tool `get_run_logs`를 사용하세요.
+                {t.live_log_hint}
               </span>
             </div>
           </div>
           {(curState === 'failed' || curState === 'timeout') && (
             <div className="card" style={{ marginTop: 12, borderColor: 'var(--err)' }}>
               <div className="ctitle" style={{ color: 'var(--err)' }}>
-                오류 진단 (heuristic)
+                {t.error_diagnosis}
               </div>
               <div className="col mono-s" style={{ gap: 3 }}>
                 <div>
                   • <b>{run.err_message || 'unknown error'}</b>
                 </div>
-                {failedId && <div>• 실패 step: <b>{failedId}</b></div>}
-                <div>• 로그 파일에서 stderr를 확인하세요.</div>
+                {failedId && <div>{t.failed_step_label(failedId)}</div>}
+                <div>• {t.check_stderr}</div>
               </div>
               <div className="row" style={{ marginTop: 8, gap: 6 }}>
                 <button
@@ -228,10 +226,10 @@ export function Logs() {
                   onClick={() => startRun(job.id)}
                   disabled={!!liveRun}
                 >
-                  재실행
+                  {t.rerun}
                 </button>
                 <button className="btn sm ghost" onClick={() => setScreen('builder')}>
-                  ✎ Step 편집
+                  {t.edit_step_btn}
                 </button>
               </div>
             </div>
@@ -246,7 +244,7 @@ export function Logs() {
             overflow: 'auto',
           }}
         >
-          <div className="ctitle">환경</div>
+          <div className="ctitle">{t.environment}</div>
           <div className="kv">
             <div className="k">user</div>
             <div className="v">taskflow</div>

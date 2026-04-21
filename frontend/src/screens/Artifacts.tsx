@@ -1,9 +1,11 @@
 import { useRef, useState } from 'react';
 
 import { api } from '../api/client';
+import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
 
 export function Artifacts() {
+  const t = useT();
   const artifacts = useStore((s) => s.artifacts);
   const refreshArtifacts = useStore((s) => s.refreshArtifacts);
   const pushToast = useStore((s) => s.pushToast);
@@ -24,18 +26,18 @@ export function Artifacts() {
   const handleUpload = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file || !formName || !formVer) {
-      pushToast('name/version/file 모두 필요', 'err');
+      pushToast(t.toast_upload_required, 'err');
       return;
     }
     try {
       await api.uploadArtifact(formName, formVer, formExt, file);
-      pushToast(`아티팩트 ${formName}@${formVer} 업로드 완료`);
+      pushToast(t.toast_upload_ok(formName, formVer));
       setFormName('');
       setFormVer('');
       if (fileRef.current) fileRef.current.value = '';
       await refreshArtifacts();
     } catch (e) {
-      pushToast(`업로드 실패: ${String(e)}`, 'err');
+      pushToast(t.toast_upload_fail(String(e)), 'err');
     }
   };
 
@@ -43,17 +45,17 @@ export function Artifacts() {
     <div>
       <div className="page-head">
         <h1>Artifacts</h1>
-        <span className="sub">배포 산출물 · 해시 검증 · 읽기 전용 mount</span>
+        <span className="sub">{t.artifacts_sub}</span>
         <div className="spacer" />
         <input
           className="input sm"
           style={{ width: 200 }}
-          placeholder="🔍 이름 / 버전…"
+          placeholder={t.search_artifact}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
         <button className="btn primary sm" onClick={() => setUploading((v) => !v)}>
-          {uploading ? '닫기' : '⬆ 업로드'}
+          {uploading ? t.close : t.upload_btn_toggle}
         </button>
       </div>
 
@@ -85,7 +87,7 @@ export function Artifacts() {
             <input type="file" ref={fileRef} />
           </div>
           <button className="btn primary" onClick={handleUpload}>
-            업로드
+            {t.btn_upload}
           </button>
         </div>
       )}
@@ -93,7 +95,7 @@ export function Artifacts() {
       {artifacts.length === 0 ? (
         <div style={{ padding: '40px 18px', textAlign: 'center' }}>
           <div style={{ fontSize: 40, color: 'var(--ink-4)', marginBottom: 10 }}>▦</div>
-          <div style={{ color: 'var(--ink-3)' }}>등록된 아티팩트가 없습니다.</div>
+          <div style={{ color: 'var(--ink-3)' }}>{t.no_artifacts}</div>
         </div>
       ) : (
         <div
@@ -177,7 +179,7 @@ export function Artifacts() {
                 <div className="spacer" />
                 {sel.latest && <span className="chip accent">latest</span>}
               </div>
-              <div className="ctitle" style={{ marginTop: 14 }}>상세</div>
+              <div className="ctitle" style={{ marginTop: 14 }}>{t.detail}</div>
               <div className="kv">
                 <div className="k">sha-256</div>
                 <div className="v" style={{ wordBreak: 'break-all' }}>
@@ -192,16 +194,16 @@ export function Artifacts() {
                   </>
                 )}
               </div>
-              <div className="ctitle" style={{ marginTop: 14 }}>검증</div>
+              <div className="ctitle" style={{ marginTop: 14 }}>{t.verify}</div>
               <div className="col mono-s" style={{ gap: 3 }}>
                 <div>
-                  <span style={{ color: 'var(--ok)' }}>✓</span> sha-256 저장 완료
+                  <span style={{ color: 'var(--ok)' }}>✓</span> {t.verify_sha256}
                 </div>
                 <div>
-                  <span style={{ color: 'var(--ok)' }}>✓</span> 읽기 전용(0444) mount
+                  <span style={{ color: 'var(--ok)' }}>✓</span> {t.verify_readonly}
                 </div>
                 <div>
-                  <span style={{ color: 'var(--ok)' }}>✓</span> 악성 패턴 스캔 (MVP: stub)
+                  <span style={{ color: 'var(--ok)' }}>✓</span> {t.verify_scan}
                 </div>
               </div>
             </aside>
