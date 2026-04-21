@@ -301,7 +301,9 @@ function Inspector({
       <div className="ctitle">Inspector · {step.id}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">ID</label>
+          <label className="mono-s dim">
+            ID <span className="req" aria-label="required">*</span>
+          </label>
           <input
             className="input mono sm"
             value={step.id}
@@ -320,7 +322,9 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">Command (argv — shell=False)</label>
+          <label className="mono-s dim">
+            Command (argv — shell=False) <span className="req" aria-label="required">*</span>
+          </label>
           <input
             className="input mono sm"
             value={cmdText}
@@ -392,7 +396,9 @@ function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) =>
       <div className="ctitle">{t.job_meta}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">ID (kebab-case)</label>
+          <label className="mono-s dim">
+            ID (kebab-case) <span className="req" aria-label="required">*</span>
+          </label>
           <input
             className="input mono sm"
             value={draft.id}
@@ -400,7 +406,9 @@ function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) =>
           />
         </div>
         <div>
-          <label className="mono-s dim">Name</label>
+          <label className="mono-s dim">
+            Name <span className="req" aria-label="required">*</span>
+          </label>
           <input
             className="input sm"
             value={draft.name}
@@ -497,6 +505,13 @@ function YamlView({
       }}
     >
       <div style={{ padding: 14 }}>
+        <div
+          className="row"
+          style={{ alignItems: 'center', gap: 8, marginBottom: 8 }}
+        >
+          <span className="chip">{t.yaml_readonly_badge}</span>
+          <span className="mono-s dim">{t.yaml_readonly_hint}</span>
+        </div>
         <div className="console" style={{ minHeight: 400 }}>
           <YamlRender job={draft as any} />
         </div>
