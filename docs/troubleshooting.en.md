@@ -55,7 +55,7 @@ See [MCP API §2](./mcp-api.en.md#2-scope-rules) for scope matching rules.
 
 ### Job run immediately returns `policy.violation` for an allowlisted command
 
-This is intentional behavior. Add the argv prefix to `backend/app/dev/allowlist.yaml` and restart the backend.
+This is intentional behavior. Add the argv prefix to the **local copy** at `backend/app/dev/allowlist.yaml` (not the tracked template) and restart the backend. If the local copy does not exist yet, run `make bootstrap-allowlist` to seed it from `backend/app/dev/allowlist.example.yaml`. In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file.
 
 ```yaml
 allow:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,8 @@ from app.config import settings
 SHELL_FALSE = True  # 상수 — 변경 불가
 STEP_USER = "taskflow"
 
+_log = logging.getLogger(__name__)
+
 
 class AllowlistError(ValueError):
     pass
@@ -17,13 +20,44 @@ class AllowlistError(ValueError):
 _ALLOW: list[list[str]] | None = None
 
 
+def _resolve_path() -> Path:
+    """Choose the allowlist file to load.
+
+    Resolution order:
+      1. `settings.allowlist_path` (defaults to `./app/dev/allowlist.yaml`,
+         overridable via `TASKFLOW_ALLOWLIST_PATH` — the per-environment copy,
+         which is .gitignored).
+      2. `backend/app/dev/allowlist.yaml` resolved relative to this module
+         (handles pytest / alternate cwd setups).
+      3. `backend/app/dev/allowlist.example.yaml` — the tracked template
+         shipped with the repo. Falling back to this means the user has not
+         yet bootstrapped their local copy (e.g. fresh clone before
+         `make setup`); we warn so the operator knows to copy + customize.
+    """
+    primary = settings.allowlist_path
+    if primary.exists():
+        return primary
+
+    module_dev = Path(__file__).resolve().parent.parent / "dev"
+    local_copy = module_dev / "allowlist.yaml"
+    if local_copy.exists():
+        return local_copy
+
+    example = module_dev / "allowlist.example.yaml"
+    _log.warning(
+        "allowlist.yaml not found at %s — falling back to shipped template %s. "
+        "Run `make bootstrap-allowlist` to create a per-environment copy.",
+        primary,
+        example,
+    )
+    return example
+
+
 def _load() -> list[list[str]]:
     global _ALLOW
     if _ALLOW is not None:
         return _ALLOW
-    path = settings.allowlist_path
-    if not path.exists():
-        path = Path(__file__).resolve().parent.parent / "dev" / "allowlist.yaml"
+    path = _resolve_path()
     with path.open("r") as f:
         data = yaml.safe_load(f) or {}
     _ALLOW = [list(entry) for entry in data.get("allow", [])]

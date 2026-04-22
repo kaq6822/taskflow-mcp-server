@@ -140,6 +140,21 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | 외부에서 본 API 호스트 (Vite proxy target) |
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 콤마 구분 origin 화이트리스트 |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | production 모드의 SPA dist 경로 |
+| `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist 경로. 프로덕션은 `/etc/taskflow/allowlist.yaml` 같은 저장소 밖 경로 권장 |
+
+## argv allowlist 관리
+
+argv allowlist는 **환경별** 설정입니다:
+
+| 경로 | 추적 | 용도 |
+|---|---|---|
+| `backend/app/dev/allowlist.example.yaml` | git 추적 | 저장소 공유 템플릿 (변경은 PR로 리뷰) |
+| `backend/app/dev/allowlist.yaml` | `.gitignore` 제외 | `make setup`이 자동 복사하는 로컬 사본. 실제 운영 중 사용 |
+| `TASKFLOW_ALLOWLIST_PATH`로 지정한 경로 | — | 프로덕션 권장. `/etc/taskflow/allowlist.yaml` 등 저장소 밖 파일 |
+
+첫 설치 후 `allowlist.yaml`을 본인 환경에 맞게 편집하세요. 변경 후 반영은 backend 재시작(`make stop && make start-bg`)입니다 — 현재 구현은 런타임 hot-reload를 지원하지 않으므로 로그 상에 "falling back to shipped template" 경고가 보이면 `make bootstrap-allowlist`로 로컬 사본부터 생성하세요.
+
+프로덕션 배포에서는 deployment 도구(Ansible, Terraform, Helm 등)로 `TASKFLOW_ALLOWLIST_PATH`를 세팅하고 해당 경로 파일을 관리하여, 저장소의 템플릿과 완전히 분리된 수명 주기를 유지하는 것을 권장합니다.
 
 ## 데이터 위치
 

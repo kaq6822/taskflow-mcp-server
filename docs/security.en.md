@@ -10,7 +10,7 @@ Step execution is exclusively via `asyncio.create_subprocess_exec(*argv)`. There
 
 ### 2. argv Allowlist
 
-Only argv prefixes listed in `backend/app/dev/allowlist.yaml` can be executed. Mismatches produce a `policy.violation` audit entry + DENY.
+Only argv prefixes listed in the local allowlist (`backend/app/dev/allowlist.yaml` — the **per-environment copy**, `.gitignore`d) can be executed. Mismatches produce a `policy.violation` audit entry + DENY. The shared template is `backend/app/dev/allowlist.example.yaml`; `make setup` seeds the local copy on first install. In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file.
 
 ```yaml
 allow:
@@ -89,6 +89,6 @@ The following are outside the current security model scope:
 
 ## Related
 
-- Policy implementation details → `backend/app/engine/policies.py`, `backend/app/dev/allowlist.yaml`
+- Policy implementation details → `backend/app/engine/policies.py`, `backend/app/dev/allowlist.example.yaml` (template), `backend/app/dev/allowlist.yaml` (per-environment local copy)
 - Audit event types → [02-business-rules.md](./02-business-rules.md)
 - MCP Key scope matching → [MCP API](./mcp-api.en.md)

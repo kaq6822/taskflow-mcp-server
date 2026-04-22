@@ -61,7 +61,16 @@ Open **http://localhost:5173** in your browser. On first run, the backend prints
 
 ## argv Allowlist
 
-Step argv can only use commands registered in `backend/app/dev/allowlist.yaml`. Defaults:
+Step argv can only use commands registered in the local allowlist. The file is split in two so each environment can customise it without polluting the shared repo:
+
+| Path | Tracked | Role |
+|---|---|---|
+| `backend/app/dev/allowlist.example.yaml` | in git | The shipped template shared across clones |
+| `backend/app/dev/allowlist.yaml` | **`.gitignore`d** | The per-environment copy actually loaded at runtime |
+
+`make setup` (or `make setup-backend`) copies the template into place on first install, and never overwrites an existing local copy. To regenerate manually, run `make bootstrap-allowlist`.
+
+Defaults:
 
 ```yaml
 allow:
@@ -75,7 +84,9 @@ allow:
   # + /bin/*, /usr/bin/* variants
 ```
 
-Commands you need (e.g., `npm`, `aws`) must be explicitly added to this file before they can run. This is an intentional restriction to prevent accidents. See [Security](./security.en.md) for policy background.
+Commands you need (e.g., `zip`, or the absolute path of an environment-specific wrapper script) must be added to **`allowlist.yaml`** — the local copy, not the template. Restart the backend after editing (`make stop && make start-bg`). In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file (e.g., `/etc/taskflow/allowlist.yaml`) managed by your deployment tooling.
+
+This is an intentional restriction to prevent accidents. See [Security](./security.en.md) for policy background.
 
 ## Next Steps
 

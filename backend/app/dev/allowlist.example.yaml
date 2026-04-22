@@ -1,0 +1,37 @@
+# TaskFlow argv allowlist — TEMPLATE (tracked in git).
+#
+# This file is the shipped default. Your real allowlist lives at
+#   backend/app/dev/allowlist.yaml
+# which is .gitignored so per-environment edits do NOT leak back into the
+# repository's shared defaults. The Makefile's `setup-backend` target copies
+# this template into place on first install; run `make bootstrap-allowlist`
+# any time you want to regenerate the local copy from scratch.
+#
+# Each entry is a list representing a matching prefix. Examples:
+#   - ["echo"]                       — any echo invocation
+#   - ["sleep"]                      — any sleep invocation
+#   - ["/bin/ls", "-la"]             — only this exact prefix
+#
+# To add commands for your own environment, edit `allowlist.yaml` (NOT this
+# template) and restart the backend. Adding commands is your explicit opt-in
+# to give the TaskFlow worker the ability to execute them.
+#
+# In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree
+# file (e.g. /etc/taskflow/allowlist.yaml) managed by your deployment tooling.
+allow:
+  - ["echo"]
+  - ["printf"]
+  - ["sleep"]
+  - ["ls"]
+  - ["cat"]
+  - ["/bin/true"]
+  - ["/bin/false"]
+  - ["/bin/echo"]
+  - ["/bin/sleep"]
+  - ["/bin/ls"]
+  - ["/bin/cat"]
+  - ["/usr/bin/echo"]
+  - ["/usr/bin/printf"]
+  - ["/usr/bin/sleep"]
+  - ["/usr/bin/ls"]
+  - ["/usr/bin/cat"]

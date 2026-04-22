@@ -140,6 +140,21 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | External API host (Vite proxy target) |
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated origin whitelist |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | SPA dist path for production mode |
+| `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist path. For production, prefer an out-of-tree location such as `/etc/taskflow/allowlist.yaml` |
+
+## argv Allowlist Management
+
+The argv allowlist is **per-environment** configuration:
+
+| Path | Tracked | Role |
+|---|---|---|
+| `backend/app/dev/allowlist.example.yaml` | in git | Shared template (change via PR review) |
+| `backend/app/dev/allowlist.yaml` | `.gitignore`d | Local copy auto-seeded by `make setup`; this is what the runtime actually loads |
+| Path set by `TASKFLOW_ALLOWLIST_PATH` | — | Recommended for production — an out-of-tree file such as `/etc/taskflow/allowlist.yaml` |
+
+After the first install, edit `allowlist.yaml` to fit your environment. Changes take effect on backend restart (`make stop && make start-bg`) — the current implementation does not hot-reload. If you see a "falling back to shipped template" warning in the logs, run `make bootstrap-allowlist` to seed the local copy.
+
+In production, have your deployment tooling (Ansible, Terraform, Helm, etc.) set `TASKFLOW_ALLOWLIST_PATH` and manage the file at that path, keeping its lifecycle fully separate from the repo's template.
 
 ## Data Locations
 
