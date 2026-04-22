@@ -31,6 +31,7 @@ type State = {
   screen: Screen;
   selectedJobId: string | null;
   selectedRunId: number | null;
+  selectedArtifactId: number | null;
 
   jobs: Job[];
   runs: Run[];
@@ -45,6 +46,7 @@ type State = {
   setScreen: (s: Screen) => void;
   setSelectedJobId: (id: string | null) => void;
   setSelectedRunId: (id: number | null) => void;
+  setSelectedArtifactId: (id: number | null) => void;
   setLang: (l: Lang) => void;
 
   refreshJobs: () => Promise<unknown>;
@@ -67,6 +69,7 @@ export const useStore = create<State>()(
       screen: 'dashboard',
       selectedJobId: null,
       selectedRunId: null,
+      selectedArtifactId: null,
 
       jobs: [],
       runs: [],
@@ -81,6 +84,7 @@ export const useStore = create<State>()(
       setScreen: (s) => set({ screen: s }),
       setSelectedJobId: (id) => set({ selectedJobId: id }),
       setSelectedRunId: (id) => set({ selectedRunId: id }),
+      setSelectedArtifactId: (id) => set({ selectedArtifactId: id }),
       setLang: (l) => set({ lang: l }),
 
       refreshJobs: async () => set({ jobs: await api.listJobs() }),
@@ -187,6 +191,7 @@ export const useStore = create<State>()(
         screen: s.screen,
         selectedJobId: s.selectedJobId,
         selectedRunId: s.selectedRunId,
+        selectedArtifactId: s.selectedArtifactId,
         lang: s.lang,
       }),
     }

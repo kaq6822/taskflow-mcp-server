@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api/client';
 import { useT } from '../i18n/useT';
@@ -9,6 +9,8 @@ export function Artifacts() {
   const artifacts = useStore((s) => s.artifacts);
   const refreshArtifacts = useStore((s) => s.refreshArtifacts);
   const pushToast = useStore((s) => s.pushToast);
+  const selectedArtifactId = useStore((s) => s.selectedArtifactId);
+  const setSelectedArtifactId = useStore((s) => s.setSelectedArtifactId);
 
   const [selIdx, setSelIdx] = useState(0);
   const [filter, setFilter] = useState('');
@@ -18,9 +20,20 @@ export function Artifacts() {
   const [formExt, setFormExt] = useState('tar.gz');
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const filtered = artifacts.filter(
-    (a) => !filter || a.name.includes(filter) || a.version.includes(filter)
+  const filtered = useMemo(
+    () =>
+      artifacts.filter(
+        (a) => !filter || a.name.includes(filter) || a.version.includes(filter)
+      ),
+    [artifacts, filter]
   );
+
+  useEffect(() => {
+    if (selectedArtifactId == null) return;
+    const idx = filtered.findIndex((a) => a.id === selectedArtifactId);
+    if (idx >= 0) setSelIdx(idx);
+  }, [selectedArtifactId, filtered]);
+
   const sel = filtered[selIdx] || filtered[0];
 
   const handleUpload = async () => {
@@ -123,7 +136,10 @@ export function Artifacts() {
                   <tr
                     key={a.id}
                     className={selIdx === i ? 'selected' : ''}
-                    onClick={() => setSelIdx(i)}
+                    onClick={() => {
+                      setSelIdx(i);
+                      setSelectedArtifactId(a.id);
+                    }}
                   >
                     <td>
                       <div style={{ fontWeight: 600 }}>{a.name}</div>

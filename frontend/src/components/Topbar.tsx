@@ -35,6 +35,7 @@ export function Topbar() {
   const selectedJobId = useStore((s) => s.selectedJobId);
   const setSelectedJobId = useStore((s) => s.setSelectedJobId);
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
+  const setSelectedArtifactId = useStore((s) => s.setSelectedArtifactId);
   const liveRun = useStore((s) => s.liveRun);
   const jobs = useStore((s) => s.jobs);
   const runs = useStore((s) => s.runs);
@@ -107,6 +108,7 @@ export function Topbar() {
       setSelectedRunId(h.id);
       setScreen('logs');
     } else {
+      setSelectedArtifactId(h.id);
       setScreen('artifacts');
     }
     setQ('');
