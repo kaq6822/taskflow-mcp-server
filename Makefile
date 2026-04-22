@@ -2,7 +2,7 @@
         dev-lan dev-lan-backend dev-lan-mcp dev-lan-frontend \
         build ensure-build start start-backend start-mcp \
         start-bg stop status logs \
-        test migrate reset clean
+        test migrate reset clean bootstrap-allowlist
 
 PY := python3
 VENV := backend/.venv
@@ -30,10 +30,22 @@ MCP_PID        := $(LOG_DIR)/mcp.pid
 setup: setup-backend setup-frontend migrate
 	@echo "\n✓ setup complete. run 'make dev' (loopback) or 'make dev-lan' (LAN)."
 
-setup-backend:
+setup-backend: bootstrap-allowlist
 	$(PY) -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e "backend[dev]"
+
+# Seed a per-environment argv allowlist from the tracked template on first
+# install. Never overwrites an existing local copy, so operators keep their
+# customizations across upgrades. The local file is .gitignored — edit it
+# freely without polluting the shared repo defaults.
+bootstrap-allowlist:
+	@if [ ! -f backend/app/dev/allowlist.yaml ]; then \
+	  echo "bootstrap-allowlist → copying template to backend/app/dev/allowlist.yaml"; \
+	  cp backend/app/dev/allowlist.example.yaml backend/app/dev/allowlist.yaml; \
+	else \
+	  echo "bootstrap-allowlist → existing backend/app/dev/allowlist.yaml preserved"; \
+	fi
 
 setup-frontend:
 	cd frontend && npm install

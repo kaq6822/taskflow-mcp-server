@@ -36,3 +36,8 @@ taskflow.db-wal
 taskflow.db-shm
 storage/
 logs/
+
+# Per-environment argv allowlist. The shipped template is
+# backend/app/dev/allowlist.example.yaml; the local, environment-specific
+# copy below must NOT be committed back to the shared repo.
+backend/app/dev/allowlist.yaml

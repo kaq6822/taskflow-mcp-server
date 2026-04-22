@@ -55,7 +55,7 @@ Scope 매칭 규칙은 [MCP API §2](./mcp-api.md#2-scope-규칙).
 
 ### allowlist에 없는 커맨드로 Job 실행이 즉시 `policy.violation`
 
-의도된 동작입니다. `backend/app/dev/allowlist.yaml`에 해당 argv 프리픽스를 추가하고 backend를 재시작하세요.
+의도된 동작입니다. 환경별 로컬 사본 `backend/app/dev/allowlist.yaml`(템플릿 아님)에 argv 프리픽스를 추가하고 backend를 재시작하세요. 사본이 없다면 `make bootstrap-allowlist`로 템플릿(`backend/app/dev/allowlist.example.yaml`)에서 복사합니다. 프로덕션에서는 `TASKFLOW_ALLOWLIST_PATH`로 저장소 밖 경로를 지정하는 것이 안전합니다.
 
 ```yaml
 allow:
