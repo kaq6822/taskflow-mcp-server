@@ -124,102 +124,120 @@ class RunEngine:
             lock.release()
 
     async def _run_loop_body(self, job_id: str, run_id: int) -> None:
+        # Phase A — snapshot immutable Run/Job fields into plain values. The
+        # session is closed immediately so the SQLite writer lock is never
+        # held while subprocesses execute below.
         async with SessionLocal() as session:
             run = await session.get(Run, run_id)
             assert run is not None
             job = await session.get(Job, job_id)
             assert job is not None
-            job_steps = {s["id"]: s for s in job.steps}
+            order: list[str] = list(run.order)
+            job_steps: dict[str, dict] = {s["id"]: s for s in job.steps}
+            job_on_failure: str = job.on_failure
+            actor: str = run.actor
+            trigger: str = run.trigger
+            started_at = run.started_at
             log_bus.publish(
                 run_id,
                 "run.started",
-                {"run_id": run_id, "job_id": job_id, "at": run.started_at.isoformat()},
+                {"run_id": run_id, "job_id": job_id, "at": started_at.isoformat()},
             )
 
-            failed = False
-            for sid in run.order:
-                if run_id in self._cancelled:
-                    failed = True
-                    break
-                step_spec = job_steps[sid]
-                rs = (
-                    await session.execute(
-                        select(RunStep).where(
-                            RunStep.run_id == run_id, RunStep.step_id == sid
+        # Phase B — each step owns its own short transactions. Subprocess I/O
+        # happens entirely outside any DB session.
+        failed = False
+        failed_step: str | None = None
+        err_message: str | None = None
+        for sid in order:
+            if run_id in self._cancelled:
+                failed = True
+                break
+            step_spec = job_steps[sid]
+            # P2-4: once a previous step has set `failed=True` via STOP or
+            # RETRY-exhausted, skip downstream regardless of job default.
+            if failed:
+                async with SessionLocal() as s:
+                    rs = (
+                        await s.execute(
+                            select(RunStep).where(
+                                RunStep.run_id == run_id, RunStep.step_id == sid
+                            )
                         )
-                    )
-                ).scalar_one()
-                # P2-4: once a previous step has set `failed=True` via STOP or
-                # RETRY-exhausted, skip downstream regardless of job default.
-                # `failed` is only set when the effective policy is STOP-ish,
-                # so we don't need to re-examine job.on_failure here.
-                if failed:
+                    ).scalar_one()
                     rs.state = "SKIPPED"
-                    await session.flush()
+                    await s.commit()
+                log_bus.publish(
+                    run_id,
+                    "step.finished",
+                    {"step_id": sid, "state": "SKIPPED", "elapsed_sec": 0.0},
+                )
+                continue
+            result = await self._execute_step(
+                run_id=run_id,
+                step_id=sid,
+                step_spec=step_spec,
+                actor=actor,
+                trigger=trigger,
+            )
+            if result.state in ("FAILED", "TIMEOUT"):
+                failed_step = sid
+                err_message = result.err_message
+                # Step-level on_failure wins over job default (docs/02 §2.3).
+                on_fail = step_spec.get("on_failure", job_on_failure)
+                if on_fail == "RETRY":
                     log_bus.publish(
                         run_id,
-                        "step.finished",
-                        {"step_id": sid, "state": "SKIPPED", "elapsed_sec": 0.0},
+                        "step.log",
+                        {
+                            "step_id": sid,
+                            "ts": _ts(),
+                            "lvl": "warn",
+                            "text": "retrying once …",
+                        },
                     )
-                    continue
-                result = await self._execute_step(
-                    session,
-                    run_id=run_id,
-                    rs=rs,
-                    step_spec=step_spec,
-                    actor=run.actor,
-                    trigger=run.trigger,
-                )
-                if result.state in ("FAILED", "TIMEOUT"):
-                    run.failed_step = sid
-                    run.err_message = result.err_message
-                    # Step-level on_failure wins over job default (docs/02 §2.3).
-                    on_fail = step_spec.get("on_failure", job.on_failure)
-                    if on_fail == "RETRY":
-                        log_bus.publish(
-                            run_id,
-                            "step.log",
-                            {
-                                "step_id": sid,
-                                "ts": _ts(),
-                                "lvl": "warn",
-                                "text": "retrying once …",
-                            },
-                        )
-                        retry = await self._execute_step(
-                            session,
-                            run_id=run_id,
-                            rs=rs,
-                            step_spec=step_spec,
-                            actor=run.actor,
-                            trigger=run.trigger,
-                        )
-                        if retry.state in ("FAILED", "TIMEOUT"):
-                            failed = True
-                        else:
-                            # P2-5: retry succeeded — clear the failure metadata
-                            # from the first attempt so the final response
-                            # doesn't claim a step failed when it ultimately
-                            # succeeded.
-                            run.failed_step = None
-                            run.err_message = None
-                    elif on_fail == "CONTINUE":
-                        pass  # proceed without marking the run failed
-                    else:
-                        # STOP / ROLLBACK — stop downstream execution.
+                    retry = await self._execute_step(
+                        run_id=run_id,
+                        step_id=sid,
+                        step_spec=step_spec,
+                        actor=actor,
+                        trigger=trigger,
+                    )
+                    if retry.state in ("FAILED", "TIMEOUT"):
                         failed = True
+                        # Preserve first-attempt failure metadata, matching the
+                        # pre-split behavior (docs/02 §10.4).
+                    else:
+                        # P2-5: retry succeeded — clear the failure metadata
+                        # from the first attempt so the final response
+                        # doesn't claim a step failed when it ultimately
+                        # succeeded.
+                        failed_step = None
+                        err_message = None
+                elif on_fail == "CONTINUE":
+                    pass  # proceed without marking the run failed
+                else:
+                    # STOP / ROLLBACK — stop downstream execution.
+                    failed = True
 
+        # Phase C — finalize Run + audit append in a single short transaction.
+        async with SessionLocal() as session:
+            run = await session.get(Run, run_id)
+            assert run is not None
             run.finished_at = utcnow()
-            run.duration_sec = (run.finished_at - run.started_at).total_seconds()
+            run.duration_sec = (run.finished_at - started_at).total_seconds()
             if run_id in self._cancelled:
                 run.status = "FAILED"
-                run.err_message = run.err_message or "사용자 취소"
+                run.err_message = err_message or "사용자 취소"
+                run.failed_step = failed_step
             elif failed:
                 run.status = (
                     "TIMEOUT"
-                    if run.err_message and "timeout" in run.err_message
+                    if err_message and "timeout" in err_message
                     else "FAILED"
                 )
+                run.err_message = err_message
+                run.failed_step = failed_step
             else:
                 run.status = "SUCCESS"
                 # Clear per-step failure metadata accumulated via CONTINUE/RETRY
@@ -228,25 +246,29 @@ class RunEngine:
                 # run ended up failing", which is nothing on SUCCESS).
                 run.failed_step = None
                 run.err_message = None
+            final_status = run.status
+            final_failed_step = run.failed_step
+            final_err_message = run.err_message
+            final_duration = run.duration_sec
             await append_event(
                 session,
-                who=run.actor,
-                kind="job.run.fail" if run.status != "SUCCESS" else "job.run.done",
+                who=actor,
+                kind="job.run.fail" if final_status != "SUCCESS" else "job.run.done",
                 target=f"{job_id} #{run_id}",
-                src="mcp" if run.trigger == "mcp" else "web",
-                result="FAIL" if run.status != "SUCCESS" else "OK",
+                src="mcp" if trigger == "mcp" else "web",
+                result="FAIL" if final_status != "SUCCESS" else "OK",
             )
-            log_bus.publish(
-                run_id,
-                "run.finished",
-                {
-                    "run_id": run_id,
-                    "status": run.status,
-                    "failed_step": run.failed_step,
-                    "err_message": run.err_message,
-                    "duration_sec": run.duration_sec,
-                },
-            )
+        log_bus.publish(
+            run_id,
+            "run.finished",
+            {
+                "run_id": run_id,
+                "status": final_status,
+                "failed_step": final_failed_step,
+                "err_message": final_err_message,
+                "duration_sec": final_duration,
+            },
+        )
 
     async def _finalize_cancelled(self, job_id: str, run_id: int) -> None:
         """Finalize a run that was cancelled mid-step. Opens a fresh session
@@ -263,6 +285,19 @@ class RunEngine:
                     run.duration_sec = (
                         run.finished_at - run.started_at
                     ).total_seconds()
+                # With per-step commits the step that was mid-execution stays
+                # at RUNNING after cancellation. Flip any such zombies to
+                # FAILED so the Run schema stays consistent for clients.
+                zombies = (
+                    await s.execute(
+                        select(RunStep).where(
+                            RunStep.run_id == run_id, RunStep.state == "RUNNING"
+                        )
+                    )
+                ).scalars().all()
+                for rs in zombies:
+                    rs.state = "FAILED"
+                    rs.finished_at = rs.finished_at or utcnow()
                 await append_event(
                     s,
                     who=run.actor,
@@ -298,21 +333,36 @@ class RunEngine:
 
     async def _execute_step(
         self,
-        session: AsyncSession,
         *,
         run_id: int,
-        rs: RunStep,
+        step_id: str,
         step_spec: dict,
         actor: str,
         trigger: str,
     ) -> WorkerResult:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
-        sid = step_spec["id"]
+        sid = step_id
 
-        rs.state = "RUNNING"
-        rs.started_at = utcnow()
-        await session.flush()
+        # Mark RUNNING — short transaction. Clear any terminal fields left
+        # over from a previous attempt (RETRY re-enters this path); without
+        # this, pollers can observe state=RUNNING alongside a stale
+        # finished_at/exit_code from the failed first attempt.
+        async with SessionLocal() as s:
+            rs = (
+                await s.execute(
+                    select(RunStep).where(
+                        RunStep.run_id == run_id, RunStep.step_id == sid
+                    )
+                )
+            ).scalar_one()
+            rs.state = "RUNNING"
+            rs.started_at = utcnow()
+            rs.finished_at = None
+            rs.exit_code = None
+            rs.elapsed_sec = 0.0
+            rs.logs_path = None
+            await s.commit()
         log_bus.publish(
             run_id, "step.started", {"step_id": sid, "cmd": cmd, "timeout": timeout}
         )
@@ -336,18 +386,26 @@ class RunEngine:
         try:
             check_allowlist(cmd)
         except AllowlistError as e:
-            rs.state = "FAILED"
-            rs.finished_at = utcnow()
-            rs.exit_code = -1
-            rs.elapsed_sec = 0.0
-            await append_event(
-                session,
-                who=actor,
-                kind="policy.violation",
-                target=f"run #{run_id} step {sid}",
-                src="mcp" if trigger == "mcp" else "web",
-                result="DENY",
-            )
+            async with SessionLocal() as s:
+                rs = (
+                    await s.execute(
+                        select(RunStep).where(
+                            RunStep.run_id == run_id, RunStep.step_id == sid
+                        )
+                    )
+                ).scalar_one()
+                rs.state = "FAILED"
+                rs.finished_at = utcnow()
+                rs.exit_code = -1
+                rs.elapsed_sec = 0.0
+                await append_event(
+                    s,
+                    who=actor,
+                    kind="policy.violation",
+                    target=f"run #{run_id} step {sid}",
+                    src="mcp" if trigger == "mcp" else "web",
+                    result="DENY",
+                )
             log_bus.publish(
                 run_id,
                 "step.log",
@@ -388,6 +446,8 @@ class RunEngine:
                     "text": f"env: secrets masked ({', '.join(masked)})",
                 },
             )
+        # Subprocess runs with no DB session open — this is the window that
+        # used to hold the SQLite writer lock for the full step timeout.
         result = await execute_argv(
             cmd,
             cwd=settings.step_cwd,
@@ -396,12 +456,22 @@ class RunEngine:
             log_path=log_path,
             on_line=on_line,
         )
-        rs.state = result.state
-        rs.elapsed_sec = result.elapsed
-        rs.exit_code = result.exit_code
-        rs.finished_at = utcnow()
-        rs.logs_path = str(log_path)
-        await session.flush()
+
+        # Finalize step state — short transaction.
+        async with SessionLocal() as s:
+            rs = (
+                await s.execute(
+                    select(RunStep).where(
+                        RunStep.run_id == run_id, RunStep.step_id == sid
+                    )
+                )
+            ).scalar_one()
+            rs.state = result.state
+            rs.elapsed_sec = result.elapsed
+            rs.exit_code = result.exit_code
+            rs.finished_at = utcnow()
+            rs.logs_path = str(log_path)
+            await s.commit()
         if result.state == "SUCCESS":
             log_bus.publish(
                 run_id,
