@@ -423,11 +423,11 @@ function MetaEditor({
             value={draft.id}
             onChange={(e) => setDraft({ ...draft, id: e.target.value })}
             disabled={isExisting}
-            title={isExisting ? 'Job ID는 생성 후 변경할 수 없습니다' : undefined}
+            title={isExisting ? t.job_id_locked_hint : undefined}
           />
           {isExisting && (
             <div className="mono-s dim" style={{ marginTop: 4 }}>
-              Job ID는 생성 후 변경할 수 없습니다.
+              {t.job_id_locked_hint}
             </div>
           )}
         </div>
