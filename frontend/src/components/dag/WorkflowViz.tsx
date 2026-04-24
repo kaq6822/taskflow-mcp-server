@@ -18,14 +18,19 @@ type VizProps = {
 export function layoutDag(steps: Step[]) {
   const byId = Object.fromEntries(steps.map((s) => [s.id, s]));
   const level: Record<string, number> = {};
+  const visiting = new Set<string>();
   const compute = (id: string): number => {
     if (level[id] !== undefined) return level[id];
+    if (visiting.has(id)) return 0;
     const s = byId[id];
-    if (!s.deps || s.deps.length === 0) {
+    if (!s) {
       level[id] = 0;
       return 0;
     }
-    const lv = Math.max(...s.deps.map(compute)) + 1;
+    visiting.add(id);
+    const knownDeps = (s.deps || []).filter((d) => byId[d]);
+    const lv = knownDeps.length === 0 ? 0 : Math.max(...knownDeps.map(compute)) + 1;
+    visiting.delete(id);
     level[id] = lv;
     return lv;
   };
@@ -86,6 +91,7 @@ export function DagView({ job, runState, onStepClick, selectedStep, compact }: V
         </defs>
         {job.steps.flatMap((st) =>
           (st.deps || []).map((dep) => {
+            if (dep === st.id) return null;
             const from = pos[dep];
             const to = pos[st.id];
             if (!from || !to) return null;

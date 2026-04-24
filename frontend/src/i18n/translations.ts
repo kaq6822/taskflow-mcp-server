@@ -40,6 +40,8 @@ export const translations = {
     canvas_cmd_hint: 'Step을 클릭해 우측 Inspector에서 편집. argv는 shell=False — 리스트만 허용.',
     delete_step: '이 Step 삭제',
     job_meta: 'Job 메타',
+    job_id_locked_hint: 'Job ID는 생성 후 변경할 수 없습니다.',
+    job_concurrency_locked_hint: '현재 버전은 Job당 동시 Run 1개로 고정됩니다.',
     validation_panel: '검증',
     validation_unique_ids: '모든 step id 고유',
     validation_deps_valid: '의존성 참조 유효',
@@ -55,6 +57,8 @@ export const translations = {
     err_step_id_required: 'step.id 필요',
     err_step_id_dup: (id: string) => `중복 step id: ${id}`,
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
+    err_dep_self_ref: (s: string) => `${s}: 자기 자신을 의존성으로 지정할 수 없습니다`,
+    err_dep_cycle: (path: string) => `순환 의존성 감지: ${path}`,
 
     // Monitor
     sub_run_monitor: '실행 모니터',
@@ -181,6 +185,8 @@ export const translations = {
     canvas_cmd_hint: 'Click a step to edit in the Inspector on the right. argv is shell=False — list only.',
     delete_step: 'Delete Step',
     job_meta: 'Job Meta',
+    job_id_locked_hint: 'Job ID cannot be changed after creation.',
+    job_concurrency_locked_hint: 'Current version runs at most 1 concurrent run per job.',
     validation_panel: 'Validation',
     validation_unique_ids: 'All step IDs unique',
     validation_deps_valid: 'Dependency refs valid',
@@ -196,6 +202,8 @@ export const translations = {
     err_step_id_required: 'step.id is required',
     err_step_id_dup: (id: string) => `duplicate step id: ${id}`,
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
+    err_dep_self_ref: (s: string) => `${s}: step cannot depend on itself`,
+    err_dep_cycle: (path: string) => `dependency cycle detected: ${path}`,
 
     // Monitor
     sub_run_monitor: 'Run Monitor',
