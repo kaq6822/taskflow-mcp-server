@@ -21,11 +21,16 @@ export function layoutDag(steps: Step[]) {
   const compute = (id: string): number => {
     if (level[id] !== undefined) return level[id];
     const s = byId[id];
-    if (!s.deps || s.deps.length === 0) {
+    if (!s) {
       level[id] = 0;
       return 0;
     }
-    const lv = Math.max(...s.deps.map(compute)) + 1;
+    const knownDeps = (s.deps || []).filter((d) => byId[d]);
+    if (knownDeps.length === 0) {
+      level[id] = 0;
+      return 0;
+    }
+    const lv = Math.max(...knownDeps.map(compute)) + 1;
     level[id] = lv;
     return lv;
   };
