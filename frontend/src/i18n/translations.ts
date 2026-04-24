@@ -57,6 +57,8 @@ export const translations = {
     err_step_id_required: 'step.id 필요',
     err_step_id_dup: (id: string) => `중복 step id: ${id}`,
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
+    err_dep_self_ref: (s: string) => `${s}: 자기 자신을 의존성으로 지정할 수 없습니다`,
+    err_dep_cycle: (path: string) => `순환 의존성 감지: ${path}`,
 
     // Monitor
     sub_run_monitor: '실행 모니터',
@@ -200,6 +202,8 @@ export const translations = {
     err_step_id_required: 'step.id is required',
     err_step_id_dup: (id: string) => `duplicate step id: ${id}`,
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
+    err_dep_self_ref: (s: string) => `${s}: step cannot depend on itself`,
+    err_dep_cycle: (path: string) => `dependency cycle detected: ${path}`,
 
     // Monitor
     sub_run_monitor: 'Run Monitor',

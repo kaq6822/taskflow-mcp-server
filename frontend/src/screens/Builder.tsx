@@ -204,9 +204,47 @@ function validateDraft(
   }
   for (const s of d.steps) {
     for (const dep of s.deps || []) {
-      if (!ids.has(dep)) errs.push(t.err_dep_unknown(s.id, dep));
+      if (dep === s.id) {
+        errs.push(t.err_dep_self_ref(s.id));
+      } else if (!ids.has(dep)) {
+        errs.push(t.err_dep_unknown(s.id, dep));
+      }
     }
   }
+
+  // Cycle detection — mirrors backend/app/engine/dag.py DFS coloring so the
+  // validation panel flags cycles before the save round-trip.
+  const byId: Record<string, Step> = Object.fromEntries(d.steps.map((s) => [s.id, s]));
+  const WHITE = 0;
+  const GRAY = 1;
+  const BLACK = 2;
+  const color: Record<string, number> = {};
+  for (const s of d.steps) color[s.id] = WHITE;
+  let cycleReported = false;
+  const visit = (sid: string, stack: string[]): boolean => {
+    if (cycleReported) return true;
+    if (color[sid] === GRAY) {
+      const start = stack.indexOf(sid);
+      const path = [...stack.slice(start), sid].join(' → ');
+      errs.push(t.err_dep_cycle(path));
+      cycleReported = true;
+      return true;
+    }
+    if (color[sid] === BLACK) return false;
+    color[sid] = GRAY;
+    stack.push(sid);
+    for (const dep of byId[sid]?.deps || []) {
+      if (!byId[dep] || dep === sid) continue;
+      if (visit(dep, stack)) return true;
+    }
+    stack.pop();
+    color[sid] = BLACK;
+    return false;
+  };
+  for (const s of d.steps) {
+    if (color[s.id] === WHITE && visit(s.id, [])) break;
+  }
+
   return { ok: errs.length === 0, errors: errs };
 }
 
