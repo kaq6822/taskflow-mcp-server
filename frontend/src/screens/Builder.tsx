@@ -474,8 +474,13 @@ function MetaEditor({
               type="number"
               value={draft.concurrency}
               onChange={(e) => setDraft({ ...draft, concurrency: Number(e.target.value) })}
+              disabled
+              title={t.job_concurrency_locked_hint}
             />
           </div>
+        </div>
+        <div className="mono-s dim" style={{ marginTop: -4 }}>
+          {t.job_concurrency_locked_hint}
         </div>
         <div>
           <label className="mono-s dim">On failure</label>
