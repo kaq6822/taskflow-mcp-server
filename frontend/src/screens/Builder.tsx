@@ -94,7 +94,7 @@ export function Builder() {
 
   const step = draft.steps.find((s) => s.id === selStep) || draft.steps[0];
 
-  const validation = useMemo(() => validateDraft(draft, t), [draft, t]);
+  const validation = useMemo(() => validateDraft(draft, t, !!existing), [draft, t, existing]);
 
   const save = async () => {
     if (!validation.ok) {
@@ -159,6 +159,7 @@ export function Builder() {
           step={step}
           selStep={selStep}
           setSelStep={setSelStep}
+          isExisting={!!existing}
         />
       )}
       {view === 'yaml' && (
@@ -177,6 +178,7 @@ export function Builder() {
           step={step}
           selStep={selStep}
           setSelStep={setSelStep}
+          isExisting={!!existing}
         />
       )}
     </div>
@@ -184,9 +186,13 @@ export function Builder() {
 }
 
 type ValidationResult = { ok: boolean; errors: string[] };
-function validateDraft(d: Draft, t: ReturnType<typeof useT>): ValidationResult {
+function validateDraft(
+  d: Draft,
+  t: ReturnType<typeof useT>,
+  isExisting: boolean
+): ValidationResult {
   const errs: string[] = [];
-  if (!/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
+  if (!isExisting && !/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
   if (!d.name) errs.push(t.err_name_required);
   const ids = new Set<string>();
   for (const s of d.steps) {
@@ -210,12 +216,14 @@ function CanvasView({
   step,
   selStep,
   setSelStep,
+  isExisting,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
   step: Step;
   selStep: string | null;
   setSelStep: (id: string) => void;
+  isExisting: boolean;
 }) {
   const t = useT();
   return (
@@ -264,9 +272,9 @@ function CanvasView({
           overflow: 'auto',
         }}
       >
-        <Inspector draft={draft} setDraft={setDraft} step={step} />
+        <Inspector draft={draft} setDraft={setDraft} step={step} setSelStep={setSelStep} />
         <div className="hr" />
-        <MetaEditor draft={draft} setDraft={setDraft} />
+        <MetaEditor draft={draft} setDraft={setDraft} isExisting={isExisting} />
       </div>
     </div>
   );
@@ -276,10 +284,12 @@ function Inspector({
   draft,
   setDraft,
   step,
+  setSelStep,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
   step: Step;
+  setSelStep: (id: string) => void;
 }) {
   const t = useT();
   const patch = (u: Partial<Step>) => {
@@ -318,6 +328,7 @@ function Inspector({
                   }
                 ),
               });
+              setSelStep(newId);
             }}
           />
         </div>
@@ -389,7 +400,15 @@ function Inspector({
   );
 }
 
-function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) => void }) {
+function MetaEditor({
+  draft,
+  setDraft,
+  isExisting,
+}: {
+  draft: Draft;
+  setDraft: (d: Draft) => void;
+  isExisting: boolean;
+}) {
   const t = useT();
   return (
     <div>
@@ -403,7 +422,14 @@ function MetaEditor({ draft, setDraft }: { draft: Draft; setDraft: (d: Draft) =>
             className="input mono sm"
             value={draft.id}
             onChange={(e) => setDraft({ ...draft, id: e.target.value })}
+            disabled={isExisting}
+            title={isExisting ? 'Job ID는 생성 후 변경할 수 없습니다' : undefined}
           />
+          {isExisting && (
+            <div className="mono-s dim" style={{ marginTop: 4 }}>
+              Job ID는 생성 후 변경할 수 없습니다.
+            </div>
+          )}
         </div>
         <div>
           <label className="mono-s dim">
@@ -550,12 +576,14 @@ function FormView({
   step,
   selStep,
   setSelStep,
+  isExisting,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
   step: Step;
   selStep: string | null;
   setSelStep: (id: string) => void;
+  isExisting: boolean;
 }) {
   const t = useT();
   return (
@@ -608,9 +636,9 @@ function FormView({
         <h2 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600 }}>
           Step · <span className="mono">{step.id}</span>
         </h2>
-        <Inspector draft={draft} setDraft={setDraft} step={step} />
+        <Inspector draft={draft} setDraft={setDraft} step={step} setSelStep={setSelStep} />
         <div className="hr" />
-        <MetaEditor draft={draft} setDraft={setDraft} />
+        <MetaEditor draft={draft} setDraft={setDraft} isExisting={isExisting} />
       </div>
     </div>
   );
