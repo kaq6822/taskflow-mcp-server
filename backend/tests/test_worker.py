@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import threading
 
 import pytest
 
@@ -106,3 +108,49 @@ async def test_failure_contains_fails_even_with_exit_zero(tmp_path):
     assert result.state == "FAILED"
     assert result.exit_code == 0
     assert result.err_message == "output assertion failed: found forbidden text 'ERROR'"
+
+
+@pytest.mark.asyncio
+async def test_background_child_holding_stdout_does_not_keep_step_running(tmp_path):
+    result = await execute_argv(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess, sys;"
+                "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(2)']);"
+                "print('Started')"
+            ),
+        ],
+        cwd=tmp_path / "runtime",
+        timeout=5,
+        env=dict(os.environ),
+        log_path=tmp_path / "daemon.log",
+        assertions=OutputAssertions(success_contains=["Started"], failure_contains=[]),
+    )
+
+    assert result.state == "SUCCESS"
+    assert result.exit_code == 0
+    assert result.elapsed < 1.5
+    assert "Started" in (tmp_path / "daemon.log").read_text()
+    assert not any(t.name.startswith("taskflow-drain-") for t in threading.enumerate())
+
+
+@pytest.mark.asyncio
+async def test_timeout_kills_main_process_without_waiting_for_pipe_eof(tmp_path):
+    result = await execute_argv(
+        [
+            sys.executable,
+            "-c",
+            "import time; print('Started', flush=True); time.sleep(2)",
+        ],
+        cwd=tmp_path / "runtime",
+        timeout=1,
+        env=dict(os.environ),
+        log_path=tmp_path / "timeout.log",
+        assertions=OutputAssertions(success_contains=["Started"], failure_contains=[]),
+    )
+
+    assert result.state == "TIMEOUT"
+    assert result.exit_code is None
+    assert result.elapsed < 1.8

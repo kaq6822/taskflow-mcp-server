@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import threading
 import time
 from dataclasses import dataclass
+from io import BufferedReader
 from pathlib import Path
 from typing import Callable
 
@@ -60,10 +63,10 @@ async def execute_argv(
         )
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *argv,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        proc = subprocess.Popen(
+            argv,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             cwd=str(cwd),
             env=env,
         )
@@ -93,30 +96,52 @@ async def execute_argv(
         )
 
     matcher = _OutputMatcher(assertions or OutputAssertions([], []))
+    loop = asyncio.get_running_loop()
+    write_lock = threading.Lock()
 
-    async def _drain(stream: asyncio.StreamReader, name: str, f):
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            text = line.decode(errors="replace").rstrip("\n")
-            matcher.observe(text)
-            f.write(line)
-            if on_line is not None:
-                try:
-                    on_line(name, text)
-                except Exception:
-                    pass
+    def _drain(stream: BufferedReader, name: str, f) -> None:
+        try:
+            while True:
+                line = stream.readline()
+                if not line:
+                    break
+                text = line.decode(errors="replace").rstrip("\n")
+                with write_lock:
+                    matcher.observe(text)
+                    f.write(line)
+                    f.flush()
+                if on_line is not None:
+                    loop.call_soon_threadsafe(_safe_on_line, on_line, name, text)
+        except (OSError, ValueError):
+            pass
 
     with log_path.open("ab") as f:
-        drain_out = asyncio.create_task(_drain(proc.stdout, "stdout", f))
-        drain_err = asyncio.create_task(_drain(proc.stderr, "stderr", f))
+        stdout = proc.stdout
+        stderr = proc.stderr
+        assert stdout is not None and stderr is not None
+        streams = [stdout, stderr]
+        threads = [
+            threading.Thread(
+                target=_drain,
+                args=(stdout, "stdout", f),
+                daemon=True,
+                name="taskflow-drain-stdout",
+            ),
+            threading.Thread(
+                target=_drain,
+                args=(stderr, "stderr", f),
+                daemon=True,
+                name="taskflow-drain-stderr",
+            ),
+        ]
+        for t in threads:
+            t.start()
         try:
-            exit_code = await asyncio.wait_for(proc.wait(), timeout=timeout)
+            exit_code = await _wait_for_process(proc, timeout)
         except asyncio.TimeoutError:
             proc.kill()
-            await proc.wait()
-            await asyncio.gather(drain_out, drain_err, return_exceptions=True)
+            await _wait_for_process(proc, 5)
+            await asyncio.to_thread(_finish_reader_threads, threads, streams)
             elapsed = time.monotonic() - start
             return WorkerResult(
                 state="TIMEOUT",
@@ -126,10 +151,10 @@ async def execute_argv(
             )
         except asyncio.CancelledError:
             proc.kill()
-            await proc.wait()
-            await asyncio.gather(drain_out, drain_err, return_exceptions=True)
+            await _wait_for_process(proc, 5)
+            await asyncio.to_thread(_finish_reader_threads, threads, streams)
             raise
-        await asyncio.gather(drain_out, drain_err, return_exceptions=True)
+        await asyncio.to_thread(_finish_reader_threads, threads, streams)
 
     elapsed = time.monotonic() - start
     forbidden_error = matcher.forbidden_failure_message()
@@ -181,6 +206,54 @@ def _spawn_failure(
         exit_code=exit_code,
         err_message=message,
     )
+
+
+async def _wait_for_process(proc: subprocess.Popen, timeout: float) -> int:
+    deadline = time.monotonic() + timeout
+    while proc.poll() is None:
+        if time.monotonic() >= deadline:
+            raise asyncio.TimeoutError
+        await asyncio.sleep(0.05)
+    return int(proc.returncode)
+
+
+def _finish_reader_threads(
+    threads: list[threading.Thread],
+    streams: list[BufferedReader],
+    grace: float = 0.5,
+) -> None:
+    """Give pipe readers a short grace period, then stop waiting.
+
+    Daemon-style scripts can spawn a background process that keeps inherited
+    stdout/stderr descriptors open after the script itself exits. The step
+    result follows the main process exit, not a long-lived child pipe.
+    """
+    deadline = time.monotonic() + grace
+    for thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
+
+    if not any(thread.is_alive() for thread in threads):
+        return
+
+    for stream in streams:
+        _close_reader_stream(stream)
+    for thread in threads:
+        if thread.is_alive():
+            thread.join(0.1)
+
+
+def _close_reader_stream(stream: BufferedReader) -> None:
+    try:
+        stream.raw.close()
+    except (OSError, ValueError):
+        pass
+
+
+def _safe_on_line(callback: Callable[[str, str], None], name: str, text: str) -> None:
+    try:
+        callback(name, text)
+    except Exception:
+        pass
 
 
 class _OutputMatcher:

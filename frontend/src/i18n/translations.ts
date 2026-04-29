@@ -83,6 +83,8 @@ export const translations = {
     sub_run_monitor: '실행 모니터',
     no_active_run: '현재 실행 중인 Run이 없습니다',
     recent_run_history: '최근 Run 이력',
+    latest_run_output: '최근 Run 출력',
+    open_full_logs: '전체 로그 열기',
     col_start: '시작',
     col_duration: '소요',
     col_status: '상태',
@@ -130,6 +132,10 @@ export const translations = {
 
     // JobDetail
     select_job_prompt: 'Job을 선택하세요.',
+    btn_delete_job: '삭제',
+    confirm_delete_job: (id: string, runs: number) =>
+      `${id} Job을 삭제할까요?\n연결된 Run 이력 ${runs}개도 함께 삭제됩니다.`,
+    job_delete_running_hint: '실행 중인 Job은 삭제할 수 없습니다.',
     tab_overview: '개요',
     tab_runs: (n: number) => `Run 이력 · ${n}`,
     running_colors_hint: '실행 중에는 상태 색상이 변경됩니다.',
@@ -157,6 +163,8 @@ export const translations = {
     edit_step_btn: '✎ Step 편집',
     live_log_hint: '라이브 출력은 Monitor 화면 / MCP tool `get_run_logs`를 사용하세요.',
     log_path_hint: (runId: number, stepId: string) => `로그 파일 경로: storage/logs/${runId}/${stepId}.log`,
+    no_log_output: '저장된 로그 출력이 없습니다.',
+    log_unavailable: '로그를 불러올 수 없습니다.',
 
     // Store toasts
     toast_run_started: (id: number) => `Run #${id} 시작`,
@@ -164,6 +172,9 @@ export const translations = {
     toast_run_start_fail: (msg: string) => `Run 시작 실패: ${msg}`,
     toast_run_cancelled: 'Run이 취소되었습니다',
     toast_run_cancel_fail: (msg: string) => `Run 취소 실패: ${msg}`,
+    toast_job_deleted: (id: string) => `${id} Job이 삭제되었습니다`,
+    toast_job_delete_fail: (msg: string) => `Job 삭제 실패: ${msg}`,
+    toast_job_delete_running: '실행 중인 Job은 삭제할 수 없습니다',
   },
 
   en: {
@@ -248,6 +259,8 @@ export const translations = {
     sub_run_monitor: 'Run Monitor',
     no_active_run: 'No active runs',
     recent_run_history: 'Recent Run History',
+    latest_run_output: 'Latest Run Output',
+    open_full_logs: 'Open full logs',
     col_start: 'Started',
     col_duration: 'Duration',
     col_status: 'Status',
@@ -295,6 +308,10 @@ export const translations = {
 
     // JobDetail
     select_job_prompt: 'Select a job.',
+    btn_delete_job: 'Delete',
+    confirm_delete_job: (id: string, runs: number) =>
+      `Delete job ${id}?\n${runs} linked run history record(s) will also be deleted.`,
+    job_delete_running_hint: 'A running job cannot be deleted.',
     tab_overview: 'Overview',
     tab_runs: (n: number) => `Run History · ${n}`,
     running_colors_hint: 'Step colors update while running.',
@@ -322,6 +339,8 @@ export const translations = {
     edit_step_btn: '✎ Edit Step',
     live_log_hint: 'For live output, use the Monitor screen or MCP tool `get_run_logs`.',
     log_path_hint: (runId: number, stepId: string) => `Log path: storage/logs/${runId}/${stepId}.log`,
+    no_log_output: 'No stored log output.',
+    log_unavailable: 'Unable to load logs.',
 
     // Store toasts
     toast_run_started: (id: number) => `Run #${id} started`,
@@ -329,6 +348,9 @@ export const translations = {
     toast_run_start_fail: (msg: string) => `Failed to start run: ${msg}`,
     toast_run_cancelled: 'Run cancelled',
     toast_run_cancel_fail: (msg: string) => `Failed to cancel run: ${msg}`,
+    toast_job_deleted: (id: string) => `Job ${id} deleted`,
+    toast_job_delete_fail: (msg: string) => `Failed to delete job: ${msg}`,
+    toast_job_delete_running: 'A running job cannot be deleted',
   },
 } as const;
 

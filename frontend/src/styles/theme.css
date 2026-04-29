@@ -335,6 +335,11 @@ body {
   transition: background 0.1s;
 }
 .btn:hover { background: var(--hover); }
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn:disabled:hover { background: var(--panel); }
 .btn.primary { background: var(--accent); color: oklch(0.18 0.01 55); border-color: var(--accent); font-weight: 600; }
 .btn.primary:hover { background: var(--accent-2); }
 .btn.ghost { background: transparent; }

@@ -1,5 +1,21 @@
+import { useEffect, useState } from 'react';
+
+import { Run, api } from '../api/client';
 import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
+
+function failedStepId(run: Run): string | null {
+  return (
+    run.failed_step ||
+    run.steps.find((s) => s.state === 'FAILED' || s.state === 'TIMEOUT')?.step_id ||
+    run.steps[0]?.step_id ||
+    null
+  );
+}
+
+function splitLogLines(text: string): string[] {
+  return text.replace(/\n$/, '').split('\n').filter((_, i, lines) => lines.length > 1 || lines[0]);
+}
 
 export function Monitor() {
   const t = useT();
@@ -7,10 +23,35 @@ export function Monitor() {
   const runs = useStore((s) => s.runs);
   const jobs = useStore((s) => s.jobs);
   const selectedJobId = useStore((s) => s.selectedJobId);
+  const selectedRunId = useStore((s) => s.selectedRunId);
   const setScreen = useStore((s) => s.setScreen);
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const startRun = useStore((s) => s.startRun);
   const cancelRun = useStore((s) => s.cancelRun);
+  const selectedRun = selectedRunId ? runs.find((r) => r.id === selectedRunId) : null;
+  const inspectedRun = selectedRun || runs[0] || null;
+  const inspectedStepId = inspectedRun ? failedStepId(inspectedRun) : null;
+  const [storedLogText, setStoredLogText] = useState('');
+
+  useEffect(() => {
+    if (liveRun || !inspectedRun || !inspectedStepId) {
+      setStoredLogText('');
+      return;
+    }
+    let active = true;
+    setStoredLogText('');
+    api
+      .getRunLogs(inspectedRun.id, inspectedStepId, 160)
+      .then((text) => {
+        if (active) setStoredLogText(text);
+      })
+      .catch(() => {
+        if (active) setStoredLogText(t.log_unavailable);
+      });
+    return () => {
+      active = false;
+    };
+  }, [liveRun, inspectedRun?.id, inspectedStepId, t]);
 
   if (!liveRun) {
     return (
@@ -82,6 +123,57 @@ export function Monitor() {
               </table>
             )}
           </div>
+          {inspectedRun && inspectedStepId && (
+            <div style={{ textAlign: 'left', marginTop: 16 }}>
+              <div className="row" style={{ marginBottom: 8 }}>
+                <div className="ctitle">{t.latest_run_output}</div>
+                <span
+                  className={`chip ${
+                    inspectedRun.status === 'SUCCESS'
+                      ? 'ok'
+                      : inspectedRun.status === 'FAILED'
+                      ? 'err'
+                      : inspectedRun.status === 'TIMEOUT'
+                      ? 'warn'
+                      : 'info'
+                  }`}
+                >
+                  <span className="d" />
+                  #{inspectedRun.id} · {inspectedStepId} · {inspectedRun.status}
+                </span>
+                <div className="spacer" />
+                <button
+                  className="btn sm ghost"
+                  onClick={() => {
+                    setSelectedRunId(inspectedRun.id);
+                    setScreen('logs');
+                  }}
+                >
+                  {t.open_full_logs}
+                </button>
+              </div>
+              {inspectedRun.err_message && (
+                <div className="mono-s" style={{ color: 'var(--err)', marginBottom: 8 }}>
+                  {inspectedRun.err_message}
+                </div>
+              )}
+              <div className="console" style={{ maxHeight: 220 }}>
+                {splitLogLines(storedLogText).length > 0 ? (
+                  splitLogLines(storedLogText).map((line, i) => (
+                    <div className="ln" key={i}>
+                      <span className="no">{i + 1}</span>
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{line || ' '}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="ln">
+                    <span className="ts" />
+                    <span className="lvl-dim">{t.no_log_output}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );

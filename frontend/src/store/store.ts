@@ -58,6 +58,7 @@ type State = {
 
   startRun: (jobId: string) => Promise<void>;
   cancelRun: (runId?: number) => Promise<void>;
+  deleteJob: (jobId: string) => Promise<void>;
 
   pushToast: (msg: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
@@ -217,6 +218,30 @@ export const useStore = create<State>()(
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           get().pushToast(translations[get().lang].toast_run_cancel_fail(msg), 'err');
+        }
+      },
+
+      deleteJob: async (jobId: string) => {
+        if (get().liveRun?.job === jobId) {
+          get().pushToast(translations[get().lang].toast_job_delete_running, 'err');
+          return;
+        }
+        try {
+          await api.deleteJob(jobId);
+          set({
+            jobs: get().jobs.filter((j) => j.id !== jobId),
+            runs: get().runs.filter((r) => r.job_id !== jobId),
+            selectedJobId: null,
+            selectedRunId: null,
+            screen: 'dashboard',
+          });
+          get().pushToast(translations[get().lang].toast_job_deleted(jobId));
+          get().refreshJobs();
+          get().refreshRuns();
+          get().refreshAudit();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          get().pushToast(translations[get().lang].toast_job_delete_fail(msg), 'err');
         }
       },
     }),
