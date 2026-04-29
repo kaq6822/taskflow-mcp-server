@@ -51,7 +51,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 
 - **AI Agent First** — MCP endpoint lets agents trigger jobs directly; results returned as structured schema (`status`, `steps[]`, `failed_step`, `logs_uri`, etc.)
 - **Sandboxed by default** — `shell=False` (argv list only), argv allowlist, controlled cwd (`TASKFLOW_STEP_CWD` default + per-step `cwd`), secret env var masking
-- **Observable** — Real-time stdout/stderr via SSE, Workflow DAG visualization (DAG · List · Timeline views)
+- **Observable** — Real-time stdout/stderr via SSE, output-text assertions for Step success/failure, Workflow DAG visualization (DAG · List · Timeline views)
 - **Immutable audit** — Append-only hash-chained audit log; integrity verification via `/api/audit/verify`
 - **MCP control** — Per-key scopes (`run:<job-id>` / `read:*` / `write:uploads`, etc.) + token bucket rate-limit + full issue/rotate/revoke audit trail
 

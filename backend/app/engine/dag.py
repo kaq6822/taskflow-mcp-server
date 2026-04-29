@@ -32,6 +32,14 @@ def validate_steps(steps: Iterable[dict]) -> list[dict]:
         cwd = s.get("cwd")
         if cwd is not None and (not isinstance(cwd, str) or not cwd.strip()):
             raise DagValidationError(f"step {sid}: cwd must be a non-empty string")
+        for field in ("success_contains", "failure_contains"):
+            patterns = s.get(field, [])
+            if not isinstance(patterns, list) or not all(
+                isinstance(p, str) and p for p in patterns
+            ):
+                raise DagValidationError(
+                    f"step {sid}: {field} must be a list of non-empty strings"
+                )
         for d in deps:
             if d not in ids and d not in [s2.get("id") for s2 in steps]:
                 raise DagValidationError(f"step {sid}: depends on unknown step '{d}'")

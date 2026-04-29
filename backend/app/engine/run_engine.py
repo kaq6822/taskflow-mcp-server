@@ -18,7 +18,7 @@ from app.engine.policies import (
     check_forbidden_state_command,
     filter_env,
 )
-from app.engine.worker import WorkerResult, execute_argv
+from app.engine.worker import OutputAssertions, WorkerResult, execute_argv
 from app.models import Job, Run, RunStep, utcnow
 from app.services.audit import append_event
 
@@ -355,6 +355,10 @@ class RunEngine:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
         step_cwd, has_custom_cwd = _step_cwd(step_spec)
+        assertions = OutputAssertions(
+            success_contains=list(step_spec.get("success_contains") or []),
+            failure_contains=list(step_spec.get("failure_contains") or []),
+        )
         sid = step_id
 
         # Mark RUNNING — short transaction. Clear any terminal fields left
@@ -394,6 +398,22 @@ class RunEngine:
                 "text": f"cwd={step_cwd} · timeout={timeout}s · shell=False",
             },
         )
+        if assertions.success_contains or assertions.failure_contains:
+            parts = []
+            if assertions.success_contains:
+                parts.append(f"success_contains={len(assertions.success_contains)}")
+            if assertions.failure_contains:
+                parts.append(f"failure_contains={len(assertions.failure_contains)}")
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "dim",
+                    "text": "output assertions · " + " · ".join(parts),
+                },
+            )
 
         # Allowlist re-check (defense in depth)
         try:
@@ -470,6 +490,7 @@ class RunEngine:
             log_path=log_path,
             on_line=on_line,
             create_cwd=not has_custom_cwd,
+            assertions=assertions,
         )
 
         # Finalize step state — short transaction.

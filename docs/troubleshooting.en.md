@@ -92,6 +92,15 @@ Check the backend logs for `Task exception was never retrieved`. Most commonly:
 
 Stderr is recorded in `backend/storage/logs/<run_id>/<step_id>.log`.
 
+### Step exits 0 but becomes `FAILED`
+
+Check whether the step has output assertions configured.
+
+- If any `failure_contains` string appears in stdout/stderr, the step fails.
+- If any `success_contains` string is missing, the step fails.
+
+Check the `output assertion failed: ...` message in run logs together with `backend/storage/logs/<run_id>/<step_id>.log`.
+
 ### Run ends with `TIMEOUT`
 
 The Step's `timeout` field (in seconds) may be set too short. Adjust the timeout in Builder and re-run.

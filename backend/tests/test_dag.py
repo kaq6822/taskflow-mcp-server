@@ -17,6 +17,13 @@ def test_cwd_must_be_non_empty_string():
         validate_steps([{"id": "a", "cmd": ["echo"], "cwd": "", "deps": []}])
 
 
+def test_output_assertions_must_be_non_empty_string_lists():
+    with pytest.raises(DagValidationError):
+        validate_steps([{"id": "a", "cmd": ["echo"], "success_contains": [""], "deps": []}])
+    with pytest.raises(DagValidationError):
+        validate_steps([{"id": "a", "cmd": ["echo"], "failure_contains": "ERROR", "deps": []}])
+
+
 def test_duplicate_id_rejected():
     with pytest.raises(DagValidationError):
         validate_steps(

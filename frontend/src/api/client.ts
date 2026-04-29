@@ -8,6 +8,8 @@ export type Step = {
   deps: string[];
   env?: Record<string, string>;
   cwd?: string | null;
+  success_contains?: string[];
+  failure_contains?: string[];
 };
 
 export type Job = {

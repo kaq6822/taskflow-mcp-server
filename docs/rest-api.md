@@ -36,12 +36,16 @@ Backend REST API는 `http://localhost:8000`에서 서빙됩니다. Frontend(Vite
 | `id` | Job 안에서 고유한 Step id |
 | `cmd` | `shell=False`로 실행되는 argv 배열. 문자열 shell 명령은 거부 |
 | `cwd` | 선택. Step 실행 디렉토리. 생략 시 `TASKFLOW_STEP_CWD` 사용 |
+| `success_contains` | 선택. exit 0 이후 stdout/stderr에 모두 포함되어야 하는 문자열 배열 |
+| `failure_contains` | 선택. stdout/stderr에 하나라도 포함되면 Step을 실패 처리할 문자열 배열 |
 | `timeout` | Step timeout 초 |
 | `deps` | 선행 Step id 배열 |
 | `on_failure` | `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` |
 | `env` | Step 전용 환경변수 |
 
 `cd`, `pushd`, `popd`는 Step 명령으로 사용할 수 없습니다. 작업 디렉토리는 `cwd` 필드로 지정하세요.
+
+`failure_contains`는 exit code보다 우선 적용됩니다. `success_contains`는 프로세스가 exit 0으로 끝난 뒤 검증되며, 지정 문자열 중 하나라도 누락되면 Step은 `FAILED`가 됩니다.
 
 ## SSE 이벤트 포맷
 

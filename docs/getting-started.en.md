@@ -104,6 +104,23 @@ Steps run from `TASKFLOW_STEP_CWD` (`./storage/runtime`) by default. Deployment 
 
 Using `cd /cms/cms_api` as a separate step is not supported. `cd` cannot change the working directory of later steps, so represent it with `cwd`.
 
+## Output-Based Success / Failure Checks
+
+The default success condition is still `exit_code == 0`. To additionally check stdout/stderr for specific text, set `success_contains` or `failure_contains` on the step.
+
+```json
+{
+  "id": "health",
+  "cmd": ["curl", "-fsS", "http://127.0.0.1:8080/actuator/health"],
+  "success_contains": ["UP"],
+  "failure_contains": ["DOWN", "Exception"],
+  "timeout": 30,
+  "deps": ["deploy"]
+}
+```
+
+If any `failure_contains` string appears in output, the step becomes `FAILED`. `success_contains` is checked after exit 0 and all strings must appear; if any are missing, the step becomes `FAILED`.
+
 ## Next Steps
 
 - Calling from an AI Agent → [MCP API](./mcp-api.en.md)

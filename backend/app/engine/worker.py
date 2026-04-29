@@ -7,6 +7,12 @@ from pathlib import Path
 from typing import Callable
 
 
+@dataclass(frozen=True)
+class OutputAssertions:
+    success_contains: list[str]
+    failure_contains: list[str]
+
+
 @dataclass
 class WorkerResult:
     state: str  # SUCCESS | FAILED | TIMEOUT
@@ -24,6 +30,7 @@ async def execute_argv(
     log_path: Path,
     on_line: Callable[[str, str], None] | None = None,
     create_cwd: bool = True,
+    assertions: OutputAssertions | None = None,
 ) -> WorkerResult:
     """Execute argv with shell=False semantics, stream stdout+stderr.
 
@@ -85,12 +92,15 @@ async def execute_argv(
             message=f"failed to start process: {e}",
         )
 
+    matcher = _OutputMatcher(assertions or OutputAssertions([], []))
+
     async def _drain(stream: asyncio.StreamReader, name: str, f):
         while True:
             line = await stream.readline()
             if not line:
                 break
             text = line.decode(errors="replace").rstrip("\n")
+            matcher.observe(text)
             f.write(line)
             if on_line is not None:
                 try:
@@ -122,7 +132,23 @@ async def execute_argv(
         await asyncio.gather(drain_out, drain_err, return_exceptions=True)
 
     elapsed = time.monotonic() - start
+    forbidden_error = matcher.forbidden_failure_message()
+    if forbidden_error is not None:
+        return WorkerResult(
+            state="FAILED",
+            elapsed=elapsed,
+            exit_code=exit_code,
+            err_message=forbidden_error,
+        )
     if exit_code == 0:
+        required_error = matcher.required_failure_message()
+        if required_error is not None:
+            return WorkerResult(
+                state="FAILED",
+                elapsed=elapsed,
+                exit_code=0,
+                err_message=required_error,
+            )
         return WorkerResult(state="SUCCESS", elapsed=elapsed, exit_code=0)
     return WorkerResult(
         state="FAILED",
@@ -155,3 +181,32 @@ def _spawn_failure(
         exit_code=exit_code,
         err_message=message,
     )
+
+
+class _OutputMatcher:
+    def __init__(self, assertions: OutputAssertions) -> None:
+        self._required = list(assertions.success_contains)
+        self._forbidden = list(assertions.failure_contains)
+        self._found_required: set[str] = set()
+        self._found_forbidden: str | None = None
+
+    def observe(self, text: str) -> None:
+        if self._found_forbidden is None:
+            for pattern in self._forbidden:
+                if pattern in text:
+                    self._found_forbidden = pattern
+                    break
+        for pattern in self._required:
+            if pattern in text:
+                self._found_required.add(pattern)
+
+    def forbidden_failure_message(self) -> str | None:
+        if self._found_forbidden is not None:
+            return f"output assertion failed: found forbidden text {self._found_forbidden!r}"
+        return None
+
+    def required_failure_message(self) -> str | None:
+        missing = [p for p in self._required if p not in self._found_required]
+        if missing:
+            return f"output assertion failed: missing required text {missing[0]!r}"
+        return None

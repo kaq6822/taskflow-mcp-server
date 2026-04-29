@@ -205,6 +205,12 @@ function validateDraft(
     const head = typeof s.cmd[0] === 'string' ? s.cmd[0].split('/').filter(Boolean).at(-1) : undefined;
     if (head && stateCommands.has(head)) errs.push(t.err_state_command(head));
     if (s.cwd !== undefined && s.cwd !== null && !s.cwd.trim()) errs.push(`${s.id}: cwd must be non-empty`);
+    for (const field of ['success_contains', 'failure_contains'] as const) {
+      const patterns = s[field] || [];
+      if (!Array.isArray(patterns) || patterns.some((p) => typeof p !== 'string' || !p)) {
+        errs.push(`${s.id}: ${field} must be non-empty strings`);
+      }
+    }
   }
   for (const s of d.steps) {
     for (const dep of s.deps || []) {
@@ -347,6 +353,12 @@ function Inspector({
   };
   const [cmdText, setCmdText] = useState(JSON.stringify(step.cmd));
   useEffect(() => setCmdText(JSON.stringify(step.cmd)), [step.id, step.cmd.join('\u0001')]);
+  const listText = (items: string[] | undefined) => (items || []).join('\n');
+  const parseList = (value: string) =>
+    value
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   return (
     <div>
@@ -424,6 +436,26 @@ function Inspector({
             value={step.cwd || ''}
             placeholder="default: TASKFLOW_STEP_CWD"
             onChange={(e) => patch({ cwd: e.target.value || null })}
+          />
+        </div>
+        <div>
+          <label className="mono-s dim">Success output contains (one per line)</label>
+          <textarea
+            className="input mono sm"
+            style={{ minHeight: 54, resize: 'vertical' }}
+            value={listText(step.success_contains)}
+            placeholder="Deploy complete"
+            onChange={(e) => patch({ success_contains: parseList(e.target.value) })}
+          />
+        </div>
+        <div>
+          <label className="mono-s dim">Failure output contains (one per line)</label>
+          <textarea
+            className="input mono sm"
+            style={{ minHeight: 54, resize: 'vertical' }}
+            value={listText(step.failure_contains)}
+            placeholder="ERROR"
+            onChange={(e) => patch({ failure_contains: parseList(e.target.value) })}
           />
         </div>
         <div>

@@ -36,12 +36,16 @@ The Backend REST API is served at `http://localhost:8000`. The Frontend (Vite de
 | `id` | Step id, unique within the job |
 | `cmd` | argv array executed with `shell=False`; shell command strings are rejected |
 | `cwd` | Optional. Step working directory. Defaults to `TASKFLOW_STEP_CWD` |
+| `success_contains` | Optional. Strings that must all appear in stdout/stderr after exit 0 |
+| `failure_contains` | Optional. Strings that fail the step if any appear in stdout/stderr |
 | `timeout` | Step timeout in seconds |
 | `deps` | Array of upstream step ids |
 | `on_failure` | `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` |
 | `env` | Step-specific environment variables |
 
 `cd`, `pushd`, and `popd` cannot be used as step commands. Set the working directory with `cwd` instead.
+
+`failure_contains` is applied before exit-code handling. `success_contains` is checked only after the process exits with code 0; if any required string is missing, the step becomes `FAILED`.
 
 ## SSE Event Format
 

@@ -412,6 +412,34 @@ export function YamlRender({ job }: { job: Job }) {
                 <span className="y-key">depends_on</span>: [{(st.deps || []).join(', ')}]
               </>
             )}
+          {(st.success_contains || []).length > 0 &&
+            ln(
+              <>
+                {'    '}
+                <span className="y-key">success_contains</span>: [
+                {(st.success_contains || []).map((p, i) => (
+                  <span key={i}>
+                    <span className="y-str">"{p}"</span>
+                    {i < (st.success_contains || []).length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+                ]
+              </>
+            )}
+          {(st.failure_contains || []).length > 0 &&
+            ln(
+              <>
+                {'    '}
+                <span className="y-key">failure_contains</span>: [
+                {(st.failure_contains || []).map((p, i) => (
+                  <span key={i}>
+                    <span className="y-str">"{p}"</span>
+                    {i < (st.failure_contains || []).length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+                ]
+              </>
+            )}
           {ln(
             <>
               {'    '}

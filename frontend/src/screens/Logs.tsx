@@ -274,6 +274,24 @@ export function Logs() {
                   <span className="lvl-cmd">$ {curStep.cmd.join(' ')}</span>
                 </div>
               </div>
+              {((curStep.success_contains || []).length > 0 ||
+                (curStep.failure_contains || []).length > 0) && (
+                <>
+                  <div className="ctitle" style={{ marginTop: 12 }}>Output Assertions</div>
+                  <div className="col mono-s" style={{ gap: 4 }}>
+                    {(curStep.success_contains || []).map((p) => (
+                      <div key={`ok-${p}`}>
+                        <span className="chip ok">must contain</span> {p}
+                      </div>
+                    ))}
+                    {(curStep.failure_contains || []).map((p) => (
+                      <div key={`fail-${p}`}>
+                        <span className="chip err">fail on</span> {p}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

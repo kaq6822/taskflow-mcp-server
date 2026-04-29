@@ -33,6 +33,8 @@
 - `cmd`는 **반드시 argv 배열** (shell injection 방지, `shell=False` 강제). 문자열 단일 명령은 금지.
 - `cwd`는 선택 필드. 생략 시 `TASKFLOW_STEP_CWD` 기본값(`./storage/runtime`) 사용. 명시하면 해당 디렉토리가 Step subprocess의 작업 디렉토리가 됨.
 - `cd`, `pushd`, `popd` 같은 shell/process 상태 변경 명령은 Step 명령으로 금지. 작업 위치 변경은 `cwd`로 표현.
+- `success_contains`는 선택 필드. 프로세스가 exit 0으로 끝난 뒤 stdout/stderr에 지정 문자열이 모두 포함되어야 SUCCESS.
+- `failure_contains`는 선택 필드. stdout/stderr에 지정 문자열 중 하나라도 포함되면 exit code와 무관하게 FAILED.
 - `deps`는 같은 Job 내의 다른 step id 배열. **비순환(DAG)**이어야 함.
 - `timeout`은 Step 레벨이며 Job `timeout`과 독립.
 - `onFailure`: `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` 중 하나. Step이 실패했을 때 Run이 어떻게 진행될지 결정.
@@ -76,11 +78,13 @@
 ```
 PENDING → RUNNING → SUCCESS (exit 0)
                   → FAILED (exit ≠ 0, err 기록)
+                  → FAILED (failure_contains 매칭 또는 success_contains 누락)
                   → TIMEOUT (elapsed > step.timeout)
                   → SKIPPED (앞 step이 STOP으로 실패)
 ```
 
 - `RUNNING` 진입 시 `$ <cmd>` 로그 1줄 + `cwd=<step.cwd|TASKFLOW_STEP_CWD> · timeout=Xs · shell=False` 메타 로그 자동 기록.
+- 출력 assertion이 있으면 `output assertions · success_contains=N · failure_contains=N` 메타 로그 자동 기록.
 - 완료 시 `✓ done (X.Xs · exit 0)` 로그.
 
 ## 4. 트리거 규칙

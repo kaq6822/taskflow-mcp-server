@@ -14,6 +14,8 @@ class StepSpec(BaseModel):
     deps: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     cwd: str | None = None
+    success_contains: list[str] = Field(default_factory=list)
+    failure_contains: list[str] = Field(default_factory=list)
 
 
 class JobCreate(BaseModel):
