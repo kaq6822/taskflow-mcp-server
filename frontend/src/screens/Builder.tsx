@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { ApiError, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
@@ -273,10 +274,87 @@ function FieldLabel({
         {children}
         {required && <span className="req" aria-label="required">*</span>}
       </span>
-      <span className="field-help" tabIndex={0} aria-label={help} data-tooltip={help}>
+      <HelpTooltip content={help} />
+    </label>
+  );
+}
+
+type TooltipPosition = {
+  left: number;
+  top: number;
+  width: number;
+  placement: 'top' | 'bottom';
+};
+
+function HelpTooltip({ content }: { content: string }) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const margin = 12;
+      const width = Math.max(180, Math.min(280, window.innerWidth - margin * 2));
+      const minLeft = margin + width / 2;
+      const maxLeft = window.innerWidth - margin - width / 2;
+      const center = rect.left + rect.width / 2;
+      const left = Math.min(Math.max(center, minLeft), maxLeft);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const placement = spaceBelow < 150 && rect.top > spaceBelow ? 'top' : 'bottom';
+      const top = placement === 'bottom' ? rect.bottom + 8 : rect.top - 8;
+
+      setPosition({ left, top, width, placement });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, content]);
+
+  const tooltip =
+    open && position && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className={`field-tooltip ${position.placement}`}
+            role="tooltip"
+            style={{
+              left: position.left,
+              top: position.top,
+              width: position.width,
+            }}
+          >
+            {content}
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        className="field-help"
+        tabIndex={0}
+        aria-label={content}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
         ?
       </span>
-    </label>
+      {tooltip}
+    </>
   );
 }
 
