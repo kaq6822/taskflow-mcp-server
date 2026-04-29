@@ -130,6 +130,10 @@ export const translations = {
 
     // JobDetail
     select_job_prompt: 'Job을 선택하세요.',
+    btn_delete_job: '삭제',
+    confirm_delete_job: (id: string, runs: number) =>
+      `${id} Job을 삭제할까요?\n연결된 Run 이력 ${runs}개도 함께 삭제됩니다.`,
+    job_delete_running_hint: '실행 중인 Job은 삭제할 수 없습니다.',
     tab_overview: '개요',
     tab_runs: (n: number) => `Run 이력 · ${n}`,
     running_colors_hint: '실행 중에는 상태 색상이 변경됩니다.',
@@ -164,6 +168,9 @@ export const translations = {
     toast_run_start_fail: (msg: string) => `Run 시작 실패: ${msg}`,
     toast_run_cancelled: 'Run이 취소되었습니다',
     toast_run_cancel_fail: (msg: string) => `Run 취소 실패: ${msg}`,
+    toast_job_deleted: (id: string) => `${id} Job이 삭제되었습니다`,
+    toast_job_delete_fail: (msg: string) => `Job 삭제 실패: ${msg}`,
+    toast_job_delete_running: '실행 중인 Job은 삭제할 수 없습니다',
   },
 
   en: {
@@ -295,6 +302,10 @@ export const translations = {
 
     // JobDetail
     select_job_prompt: 'Select a job.',
+    btn_delete_job: 'Delete',
+    confirm_delete_job: (id: string, runs: number) =>
+      `Delete job ${id}?\n${runs} linked run history record(s) will also be deleted.`,
+    job_delete_running_hint: 'A running job cannot be deleted.',
     tab_overview: 'Overview',
     tab_runs: (n: number) => `Run History · ${n}`,
     running_colors_hint: 'Step colors update while running.',
@@ -329,6 +340,9 @@ export const translations = {
     toast_run_start_fail: (msg: string) => `Failed to start run: ${msg}`,
     toast_run_cancelled: 'Run cancelled',
     toast_run_cancel_fail: (msg: string) => `Failed to cancel run: ${msg}`,
+    toast_job_deleted: (id: string) => `Job ${id} deleted`,
+    toast_job_delete_fail: (msg: string) => `Failed to delete job: ${msg}`,
+    toast_job_delete_running: 'A running job cannot be deleted',
   },
 } as const;
 

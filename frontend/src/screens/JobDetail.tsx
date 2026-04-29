@@ -21,6 +21,7 @@ export function JobDetail() {
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const startRun = useStore((s) => s.startRun);
   const cancelRun = useStore((s) => s.cancelRun);
+  const deleteJob = useStore((s) => s.deleteJob);
   const liveRun = useStore((s) => s.liveRun);
   const [tab, setTab] = useState<'overview' | 'runs' | 'yaml'>('overview');
 
@@ -45,6 +46,11 @@ export function JobDetail() {
   const avgDur = jobRuns.length
     ? Math.round(jobRuns.reduce((a, r) => a + r.duration_sec, 0) / jobRuns.length)
     : 0;
+  const handleDelete = () => {
+    if (stopRunId) return;
+    if (!window.confirm(t.confirm_delete_job(job.id, jobRuns.length))) return;
+    deleteJob(job.id);
+  };
 
   return (
     <div>
@@ -65,6 +71,14 @@ export function JobDetail() {
         <div className="spacer" />
         <button className="btn ghost sm" onClick={() => setScreen('builder')}>
           ✎ Edit
+        </button>
+        <button
+          className="btn danger sm"
+          onClick={handleDelete}
+          disabled={!!stopRunId}
+          title={stopRunId ? t.job_delete_running_hint : undefined}
+        >
+          {t.btn_delete_job}
         </button>
         {stopRunId ? (
           <button className="btn danger sm" onClick={() => cancelRun(stopRunId)}>
