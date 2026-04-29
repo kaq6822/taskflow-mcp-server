@@ -99,7 +99,7 @@ async def execute_argv(
     loop = asyncio.get_running_loop()
     write_lock = threading.Lock()
 
-    def _drain(stream: BufferedReader, name: str, f):
+    def _drain(stream: BufferedReader, name: str, f) -> None:
         try:
             while True:
                 line = stream.readline()
@@ -116,9 +116,23 @@ async def execute_argv(
             pass
 
     with log_path.open("ab") as f:
+        stdout = proc.stdout
+        stderr = proc.stderr
+        assert stdout is not None and stderr is not None
+        streams = [stdout, stderr]
         threads = [
-            threading.Thread(target=_drain, args=(proc.stdout, "stdout", f), daemon=True),
-            threading.Thread(target=_drain, args=(proc.stderr, "stderr", f), daemon=True),
+            threading.Thread(
+                target=_drain,
+                args=(stdout, "stdout", f),
+                daemon=True,
+                name="taskflow-drain-stdout",
+            ),
+            threading.Thread(
+                target=_drain,
+                args=(stderr, "stderr", f),
+                daemon=True,
+                name="taskflow-drain-stderr",
+            ),
         ]
         for t in threads:
             t.start()
@@ -127,7 +141,7 @@ async def execute_argv(
         except asyncio.TimeoutError:
             proc.kill()
             await _wait_for_process(proc, 5)
-            await asyncio.to_thread(_finish_reader_threads, threads)
+            await asyncio.to_thread(_finish_reader_threads, threads, streams)
             elapsed = time.monotonic() - start
             return WorkerResult(
                 state="TIMEOUT",
@@ -138,9 +152,9 @@ async def execute_argv(
         except asyncio.CancelledError:
             proc.kill()
             await _wait_for_process(proc, 5)
-            await asyncio.to_thread(_finish_reader_threads, threads)
+            await asyncio.to_thread(_finish_reader_threads, threads, streams)
             raise
-        await asyncio.to_thread(_finish_reader_threads, threads)
+        await asyncio.to_thread(_finish_reader_threads, threads, streams)
 
     elapsed = time.monotonic() - start
     forbidden_error = matcher.forbidden_failure_message()
@@ -203,7 +217,11 @@ async def _wait_for_process(proc: subprocess.Popen, timeout: float) -> int:
     return int(proc.returncode)
 
 
-def _finish_reader_threads(threads: list[threading.Thread], grace: float = 0.5) -> None:
+def _finish_reader_threads(
+    threads: list[threading.Thread],
+    streams: list[BufferedReader],
+    grace: float = 0.5,
+) -> None:
     """Give pipe readers a short grace period, then stop waiting.
 
     Daemon-style scripts can spawn a background process that keeps inherited
@@ -213,6 +231,22 @@ def _finish_reader_threads(threads: list[threading.Thread], grace: float = 0.5) 
     deadline = time.monotonic() + grace
     for thread in threads:
         thread.join(max(0.0, deadline - time.monotonic()))
+
+    if not any(thread.is_alive() for thread in threads):
+        return
+
+    for stream in streams:
+        _close_reader_stream(stream)
+    for thread in threads:
+        if thread.is_alive():
+            thread.join(0.1)
+
+
+def _close_reader_stream(stream: BufferedReader) -> None:
+    try:
+        stream.raw.close()
+    except (OSError, ValueError):
+        pass
 
 
 def _safe_on_line(callback: Callable[[str, str], None], name: str, text: str) -> None:

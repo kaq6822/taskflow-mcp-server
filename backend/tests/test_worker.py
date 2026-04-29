@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 
 import pytest
 
@@ -132,6 +133,7 @@ async def test_background_child_holding_stdout_does_not_keep_step_running(tmp_pa
     assert result.exit_code == 0
     assert result.elapsed < 1.5
     assert "Started" in (tmp_path / "daemon.log").read_text()
+    assert not any(t.name.startswith("taskflow-drain-") for t in threading.enumerate())
 
 
 @pytest.mark.asyncio

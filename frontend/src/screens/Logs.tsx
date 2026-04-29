@@ -26,10 +26,12 @@ export function Logs() {
   const job = run ? jobs.find((j) => j.id === run.job_id) : null;
 
   useEffect(() => {
-    if (run && run.steps.length > 0 && !selStep) {
+    if (run && run.steps.length > 0) {
       setSelStep(run.failed_step || run.steps[0].step_id);
+    } else {
+      setSelStep(null);
     }
-  }, [run?.id]);
+  }, [run?.id, run?.failed_step, run?.steps.length]);
 
   useEffect(() => {
     setLogText('');

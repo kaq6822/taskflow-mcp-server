@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_session
 from app.engine.dag import DagValidationError, validate_steps
 from app.engine.policies import AllowlistError, check_allowlist, check_forbidden_state_command
-from app.models import Job
+from app.engine.run_engine import get_engine
+from app.models import Job, Run
 from app.schemas import JobCreate, JobOut, JobUpdate
 from app.services.audit import append_event
 
@@ -132,6 +133,32 @@ async def delete_job(
     job = await session.get(Job, job_id)
     if not job:
         raise HTTPException(404, "job not found")
+
+    current_run_id = get_engine().live_run_for(job_id)
+    if current_run_id is None:
+        current_run_id = (
+            await session.execute(
+                select(Run.id)
+                .where(Run.job_id == job_id, Run.status == "RUNNING")
+                .order_by(Run.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+    if current_run_id is not None:
+        await append_event(
+            session,
+            who=_actor(request),
+            kind="job.delete",
+            target=job_id,
+            src="web",
+            ip=_ip(request),
+            result="DENY",
+        )
+        raise HTTPException(
+            409,
+            detail={"error": "CONFLICT", "current_run_id": current_run_id},
+        )
+
     await session.delete(job)
     await append_event(
         session,
