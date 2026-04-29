@@ -83,6 +83,8 @@ export const translations = {
     sub_run_monitor: '실행 모니터',
     no_active_run: '현재 실행 중인 Run이 없습니다',
     recent_run_history: '최근 Run 이력',
+    latest_run_output: '최근 Run 출력',
+    open_full_logs: '전체 로그 열기',
     col_start: '시작',
     col_duration: '소요',
     col_status: '상태',
@@ -161,6 +163,8 @@ export const translations = {
     edit_step_btn: '✎ Step 편집',
     live_log_hint: '라이브 출력은 Monitor 화면 / MCP tool `get_run_logs`를 사용하세요.',
     log_path_hint: (runId: number, stepId: string) => `로그 파일 경로: storage/logs/${runId}/${stepId}.log`,
+    no_log_output: '저장된 로그 출력이 없습니다.',
+    log_unavailable: '로그를 불러올 수 없습니다.',
 
     // Store toasts
     toast_run_started: (id: number) => `Run #${id} 시작`,
@@ -255,6 +259,8 @@ export const translations = {
     sub_run_monitor: 'Run Monitor',
     no_active_run: 'No active runs',
     recent_run_history: 'Recent Run History',
+    latest_run_output: 'Latest Run Output',
+    open_full_logs: 'Open full logs',
     col_start: 'Started',
     col_duration: 'Duration',
     col_status: 'Status',
@@ -333,6 +339,8 @@ export const translations = {
     edit_step_btn: '✎ Edit Step',
     live_log_hint: 'For live output, use the Monitor screen or MCP tool `get_run_logs`.',
     log_path_hint: (runId: number, stepId: string) => `Log path: storage/logs/${runId}/${stepId}.log`,
+    no_log_output: 'No stored log output.',
+    log_unavailable: 'Unable to load logs.',
 
     // Store toasts
     toast_run_started: (id: number) => `Run #${id} started`,

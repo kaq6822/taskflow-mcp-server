@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { Run } from '../api/client';
+import { Run, api } from '../api/client';
 import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
+
+function splitLogLines(text: string): string[] {
+  return text.replace(/\n$/, '').split('\n').filter((_, i, lines) => lines.length > 1 || lines[0]);
+}
 
 export function Logs() {
   const t = useT();
@@ -30,13 +34,19 @@ export function Logs() {
   useEffect(() => {
     setLogText('');
     if (!run || !selStep) return;
-    fetch(`/api/runs/${run.id}`)
-      .then((r) => r.json())
-      .then(() => {
-        setLogText('');
+    let active = true;
+    api
+      .getRunLogs(run.id, selStep, 500)
+      .then((text) => {
+        if (active) setLogText(text);
       })
-      .catch(() => setLogText(''));
-  }, [run?.id, selStep]);
+      .catch(() => {
+        if (active) setLogText(t.log_unavailable);
+      });
+    return () => {
+      active = false;
+    };
+  }, [run?.id, selStep, t]);
 
   if (!run) {
     return (
@@ -214,12 +224,19 @@ export function Logs() {
                 <span className="lvl-cmd">$ {curStep.cmd.join(' ')}</span>
               </div>
             )}
-            <div className="ln">
-              <span className="ts" />
-              <span className="lvl-dim">
-                {t.live_log_hint}
-              </span>
-            </div>
+            {splitLogLines(logText).length > 0 ? (
+              splitLogLines(logText).map((line, i) => (
+                <div className="ln" key={i}>
+                  <span className="no">{i + 1}</span>
+                  <span style={{ whiteSpace: 'pre-wrap' }}>{line || ' '}</span>
+                </div>
+              ))
+            ) : (
+              <div className="ln">
+                <span className="ts" />
+                <span className="lvl-dim">{t.no_log_output}</span>
+              </div>
+            )}
           </div>
           {(curState === 'failed' || curState === 'timeout') && (
             <div className="card" style={{ marginTop: 12, borderColor: 'var(--err)' }}>

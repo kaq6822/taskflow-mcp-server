@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.db import get_session
 from app.engine.run_engine import get_engine
 from app.models import Job, Run
@@ -41,6 +45,44 @@ async def get_run(run_id: int, session: AsyncSession = Depends(get_session)) -> 
     if not run:
         raise HTTPException(404, "run not found")
     return run
+
+
+@router.get("/runs/{run_id}/logs/{step_id}", response_class=PlainTextResponse)
+async def get_run_logs(
+    run_id: int,
+    step_id: str,
+    tail: int = Query(200, ge=1, le=2000),
+    session: AsyncSession = Depends(get_session),
+) -> PlainTextResponse:
+    run = (
+        await session.execute(
+            select(Run).options(selectinload(Run.steps)).where(Run.id == run_id)
+        )
+    ).scalar_one_or_none()
+    if not run:
+        raise HTTPException(404, "run not found")
+
+    step = next((s for s in run.steps if s.step_id == step_id), None)
+    if not step:
+        raise HTTPException(404, "step not found")
+
+    log_path = (
+        Path(step.logs_path)
+        if step.logs_path
+        else settings.logs_dir / str(run_id) / f"{step_id}.log"
+    )
+    try:
+        resolved = log_path.resolve()
+        resolved.relative_to(settings.logs_dir.resolve())
+    except ValueError:
+        raise HTTPException(400, "invalid log path")
+
+    if not resolved.exists():
+        raise HTTPException(404, "log not found")
+
+    with resolved.open("r", errors="replace") as f:
+        lines = f.readlines()
+    return PlainTextResponse("".join(lines[-tail:]), media_type="text/plain; charset=utf-8")
 
 
 @router.post("/jobs/{job_id}/runs", response_model=RunOut, status_code=201)

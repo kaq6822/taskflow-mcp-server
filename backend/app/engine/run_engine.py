@@ -433,11 +433,17 @@ class RunEngine:
                 },
             )
 
+        log_path = settings.logs_dir / str(run_id) / f"{sid}.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
         # Allowlist re-check (defense in depth)
         try:
             check_forbidden_state_command(cmd)
             check_allowlist(cmd)
         except AllowlistError as e:
+            with log_path.open("ab") as f:
+                f.write(("$ " + " ".join(cmd) + "\n").encode())
+                f.write((f"DENY: {e}\n").encode())
             async with SessionLocal() as s:
                 rs = (
                     await s.execute(
@@ -450,6 +456,7 @@ class RunEngine:
                 rs.finished_at = utcnow()
                 rs.exit_code = -1
                 rs.elapsed_sec = 0.0
+                rs.logs_path = str(log_path)
                 await append_event(
                     s,
                     who=actor,
@@ -471,9 +478,6 @@ class RunEngine:
             return WorkerResult(
                 state="FAILED", elapsed=0.0, exit_code=-1, err_message=str(e)
             )
-
-        log_path = settings.logs_dir / str(run_id) / f"{sid}.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
 
         def on_line(stream: str, text: str) -> None:
             lvl = "err" if stream == "stderr" else "info"

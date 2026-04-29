@@ -136,6 +136,13 @@ export const api = {
     return req<Run[]>(`/api/runs${qs ? '?' + qs : ''}`);
   },
   getRun: (id: number) => req<Run>(`/api/runs/${id}`),
+  getRunLogs: async (runId: number, stepId: string, tail = 200) => {
+    const res = await fetch(
+      `/api/runs/${runId}/logs/${encodeURIComponent(stepId)}?tail=${tail}`
+    );
+    if (!res.ok) throw new ApiError(res.status, await res.text());
+    return res.text();
+  },
   startRun: (jobId: string, body: { trigger?: string; actor?: string; artifact_ref?: string | null } = {}) =>
     req<Run>(`/api/jobs/${jobId}/runs`, {
       method: 'POST',
