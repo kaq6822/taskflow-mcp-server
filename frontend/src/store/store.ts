@@ -63,6 +63,14 @@ type State = {
   dismissToast: (id: string) => void;
 };
 
+function detectInitialLang(): Lang {
+  if (typeof navigator === 'undefined') return 'ko';
+  const languages = [...(navigator.languages || []), navigator.language]
+    .filter(Boolean)
+    .map((lang) => lang.toLowerCase());
+  return languages.some((lang) => lang === 'ko' || lang.startsWith('ko-')) ? 'ko' : 'en';
+}
+
 export const useStore = create<State>()(
   persist(
     (set, get) => ({
@@ -79,7 +87,7 @@ export const useStore = create<State>()(
 
       liveRun: null,
       toasts: [],
-      lang: 'ko' as Lang,
+      lang: detectInitialLang(),
 
       setScreen: (s) => set({ screen: s }),
       setSelectedJobId: (id) => set({ selectedJobId: id }),
