@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { ApiError, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
@@ -258,6 +258,28 @@ function validateDraft(
   return { ok: errs.length === 0, errors: errs };
 }
 
+function FieldLabel({
+  children,
+  help,
+  required = false,
+}: {
+  children: ReactNode;
+  help: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="field-label">
+      <span>
+        {children}
+        {required && <span className="req" aria-label="required">*</span>}
+      </span>
+      <span className="field-help" tabIndex={0} aria-label={help} data-tooltip={help}>
+        ?
+      </span>
+    </label>
+  );
+}
+
 function CanvasView({
   draft,
   setDraft,
@@ -365,9 +387,9 @@ function Inspector({
       <div className="ctitle">Inspector · {step.id}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">
-            ID <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_step_id} required>
+            ID
+          </FieldLabel>
           <input
             className="input mono sm"
             value={step.id}
@@ -387,9 +409,9 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">
-            Command (argv — shell=False) <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_step_cmd} required>
+            Command (argv — shell=False)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={cmdText}
@@ -406,7 +428,7 @@ function Inspector({
         </div>
         <div className="split s2" style={{ gap: 8 }}>
           <div>
-            <label className="mono-s dim">Timeout (s)</label>
+            <FieldLabel help={t.help_step_timeout}>Timeout (s)</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -415,7 +437,7 @@ function Inspector({
             />
           </div>
           <div>
-            <label className="mono-s dim">On failure</label>
+            <FieldLabel help={t.help_step_on_failure}>On failure</FieldLabel>
             <select
               className="select"
               style={{ fontSize: 11 }}
@@ -430,7 +452,7 @@ function Inspector({
           </div>
         </div>
         <div>
-          <label className="mono-s dim">Working directory (cwd)</label>
+          <FieldLabel help={t.help_step_cwd}>Working directory (cwd)</FieldLabel>
           <input
             className="input mono sm"
             value={step.cwd || ''}
@@ -439,7 +461,9 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">Success output contains (one per line)</label>
+          <FieldLabel help={t.help_step_success_contains}>
+            Success output contains (one per line)
+          </FieldLabel>
           <textarea
             className="input mono sm"
             style={{ minHeight: 54, resize: 'vertical' }}
@@ -449,7 +473,9 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">Failure output contains (one per line)</label>
+          <FieldLabel help={t.help_step_failure_contains}>
+            Failure output contains (one per line)
+          </FieldLabel>
           <textarea
             className="input mono sm"
             style={{ minHeight: 54, resize: 'vertical' }}
@@ -459,7 +485,7 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">Depends on (comma-separated step ids)</label>
+          <FieldLabel help={t.help_step_deps}>Depends on (comma-separated step ids)</FieldLabel>
           <input
             className="input mono sm"
             value={(step.deps || []).join(',')}
@@ -498,9 +524,9 @@ function MetaEditor({
       <div className="ctitle">{t.job_meta}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">
-            ID (kebab-case) <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_job_id} required>
+            ID (kebab-case)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={draft.id}
@@ -515,9 +541,9 @@ function MetaEditor({
           )}
         </div>
         <div>
-          <label className="mono-s dim">
-            Name <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_job_name} required>
+            Name
+          </FieldLabel>
           <input
             className="input sm"
             value={draft.name}
@@ -525,7 +551,7 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Owner</label>
+          <FieldLabel help={t.help_job_owner}>Owner</FieldLabel>
           <input
             className="input sm"
             value={draft.owner}
@@ -533,7 +559,7 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Schedule</label>
+          <FieldLabel help={t.help_job_schedule}>Schedule</FieldLabel>
           <input
             className="input mono sm"
             value={draft.schedule}
@@ -542,7 +568,7 @@ function MetaEditor({
         </div>
         <div className="split s2" style={{ gap: 8 }}>
           <div>
-            <label className="mono-s dim">Timeout (s)</label>
+            <FieldLabel help={t.help_job_timeout}>Timeout (s)</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -551,7 +577,7 @@ function MetaEditor({
             />
           </div>
           <div>
-            <label className="mono-s dim">Concurrency</label>
+            <FieldLabel help={t.help_job_concurrency}>Concurrency</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -566,7 +592,7 @@ function MetaEditor({
           {t.job_concurrency_locked_hint}
         </div>
         <div>
-          <label className="mono-s dim">On failure</label>
+          <FieldLabel help={t.help_job_on_failure}>On failure</FieldLabel>
           <select
             className="select"
             style={{ fontSize: 11 }}
@@ -580,7 +606,7 @@ function MetaEditor({
           </select>
         </div>
         <div>
-          <label className="mono-s dim">Tags (comma)</label>
+          <FieldLabel help={t.help_job_tags}>Tags (comma)</FieldLabel>
           <input
             className="input mono sm"
             value={draft.tags.join(',')}
@@ -590,7 +616,9 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Consumes artifact (name, optional)</label>
+          <FieldLabel help={t.help_job_consumes_artifact}>
+            Consumes artifact (name, optional)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={draft.consumes_artifact || ''}
