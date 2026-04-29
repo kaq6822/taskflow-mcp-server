@@ -52,7 +52,7 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 ## 주요 특징
 
 - **AI Agent First** — MCP 엔드포인트로 Agent가 Job을 직접 트리거, 결과는 구조화된 스키마(`status`, `steps[]`, `failed_step`, `logs_uri` 등)로 반환
-- **Sandboxed by default** — `shell=False`(argv 리스트 전용), argv allowlist, 고정 cwd, 시크릿 환경변수 마스킹
+- **Sandboxed by default** — `shell=False`(argv 리스트 전용), argv allowlist, 제어된 cwd(`TASKFLOW_STEP_CWD` 기본 + Step별 `cwd`), 시크릿 환경변수 마스킹
 - **Observable** — SSE로 실시간 stdout/stderr 스트림, Workflow DAG 시각화(DAG · List · Timeline 3뷰)
 - **Immutable audit** — append-only hash-chained 감사 로그, `/api/audit/verify`로 무결성 검증
 - **MCP 통제** — Key별 scope(`run:<job-id>` / `read:*` / `write:uploads` 등) + 토큰 버킷 rate-limit + 발급/회전/revoke 전체 감사 기록

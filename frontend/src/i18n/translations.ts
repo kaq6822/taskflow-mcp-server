@@ -26,6 +26,7 @@ export const translations = {
     dashboard_showing: (f: number, t: number) => `${f} / ${t} 표시`,
     col_success_rate: '성공률',
     btn_run: '▷ 실행',
+    btn_stop: '■ 정지',
     recent_runs: (n: number) => `최근 실행 · ${n}개`,
     no_runs: '아직 실행 내역이 없습니다.',
     run_chart_hint: '높이 = 실행 시간 · 색 = 상태 · 클릭 시 로그 이동',
@@ -59,6 +60,7 @@ export const translations = {
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
     err_dep_self_ref: (s: string) => `${s}: 자기 자신을 의존성으로 지정할 수 없습니다`,
     err_dep_cycle: (path: string) => `순환 의존성 감지: ${path}`,
+    err_state_command: (cmd: string) => `${cmd}: cwd 필드를 사용하세요`,
 
     // Monitor
     sub_run_monitor: '실행 모니터',
@@ -144,6 +146,7 @@ export const translations = {
     toast_run_done: (id: number, status: string) => `Run #${id} 완료 · ${status}`,
     toast_run_start_fail: (msg: string) => `Run 시작 실패: ${msg}`,
     toast_run_cancelled: 'Run이 취소되었습니다',
+    toast_run_cancel_fail: (msg: string) => `Run 취소 실패: ${msg}`,
   },
 
   en: {
@@ -171,6 +174,7 @@ export const translations = {
     dashboard_showing: (f: number, t: number) => `${f} / ${t} shown`,
     col_success_rate: 'Success Rate',
     btn_run: '▷ Run',
+    btn_stop: '■ Stop',
     recent_runs: (n: number) => `Recent Runs · ${n}`,
     no_runs: 'No run history yet.',
     run_chart_hint: 'Height = duration · Color = status · Click to view logs',
@@ -204,6 +208,7 @@ export const translations = {
     err_dep_unknown: (s: string, d: string) => `${s}: unknown dep ${d}`,
     err_dep_self_ref: (s: string) => `${s}: step cannot depend on itself`,
     err_dep_cycle: (path: string) => `dependency cycle detected: ${path}`,
+    err_state_command: (cmd: string) => `${cmd}: use the cwd field instead`,
 
     // Monitor
     sub_run_monitor: 'Run Monitor',
@@ -289,6 +294,7 @@ export const translations = {
     toast_run_done: (id: number, status: string) => `Run #${id} finished · ${status}`,
     toast_run_start_fail: (msg: string) => `Failed to start run: ${msg}`,
     toast_run_cancelled: 'Run cancelled',
+    toast_run_cancel_fail: (msg: string) => `Failed to cancel run: ${msg}`,
   },
 } as const;
 

@@ -88,6 +88,22 @@ allow:
 
 사고 방지를 위한 의도된 제한이며 정책 배경은 [Security](./security.md) 참조.
 
+## Step 작업 디렉토리 (`cwd`)
+
+Step은 기본적으로 `TASKFLOW_STEP_CWD`(`./storage/runtime`)에서 실행됩니다. 특정 디렉토리에서 실행해야 하는 배포 Job은 Step에 `cwd`를 지정하세요.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300,
+  "deps": []
+}
+```
+
+`cd /cms/cms_api`를 별도 Step으로 두는 방식은 지원하지 않습니다. `cd`는 다음 Step의 작업 디렉토리를 바꾸지 못하므로 `cwd` 필드로 표현합니다.
+
 ## 다음 단계
 
 - AI Agent에서 호출하려면 → [MCP API](./mcp-api.md)

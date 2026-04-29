@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.engine.dag import DagValidationError, validate_steps
-from app.engine.policies import check_allowlist, AllowlistError
+from app.engine.policies import AllowlistError, check_allowlist, check_forbidden_state_command
 from app.models import Job
 from app.schemas import JobCreate, JobOut, JobUpdate
 from app.services.audit import append_event
@@ -38,6 +38,7 @@ async def create_job(
     try:
         validate_steps(steps_raw)
         for s in steps_raw:
+            check_forbidden_state_command(s["cmd"])
             check_allowlist(s["cmd"])
     except (DagValidationError, AllowlistError) as e:
         await append_event(
@@ -94,6 +95,7 @@ async def update_job(
         try:
             validate_steps(steps_raw)
             for s in steps_raw:
+                check_forbidden_state_command(s["cmd"])
                 check_allowlist(s["cmd"])
         except (DagValidationError, AllowlistError) as e:
             await append_event(

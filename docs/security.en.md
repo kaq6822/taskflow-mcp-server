@@ -35,9 +35,22 @@ allow:
 
 Prefix matching: `["npm", "ci"]` allows `npm ci --silent` but denies `npm install`.
 
-### 3. Fixed cwd
+### 3. Controlled cwd
 
-All steps run from `./storage/runtime` (default). Overridable with `TASKFLOW_STEP_CWD`, but there is no code path that sets subprocess cwd to the repo root or an arbitrary path.
+Steps run from `./storage/runtime` by default. This default can be overridden with `TASKFLOW_STEP_CWD`.
+
+If a job author needs a specific working directory for a step, use the step-level `cwd` field.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300
+}
+```
+
+An explicit `cwd` is rejected if empty. At execution time, if it does not exist or is not a directory, the step ends as `FAILED`. `cd`, `pushd`, and `popd` cannot be used as step commands. Directory changes are shell/process state and do not carry over to later steps, so they must be represented with `cwd`.
 
 ### 4. Secret Environment Variable Masking
 
@@ -72,8 +85,8 @@ For scope rules, see [MCP API §2](./mcp-api.en.md#2-scope-rules).
 
 ## Why Policies Cannot Be Bypassed
 
-- **At job creation (UI/REST)** — DAG parser validates argv format + rejects shell strings
-- **At run start** — `policies.py` re-validates against the allowlist
+- **At job creation (UI/REST)** — DAG parser validates argv and `cwd` format + rejects shell strings / state-changing commands
+- **At run start** — `policies.py` re-validates the allowlist and state-changing commands
 - **At subprocess time** — `create_subprocess_exec` does not perform shell interpretation (direct execve)
 
 Failure at any of the three points produces a `policy.violation` audit entry + run FAILED.
@@ -83,7 +96,7 @@ Failure at any of the three points produces a `policy.violation` audit entry + r
 The following are outside the current security model scope:
 
 - Network egress control (firewall/seccomp) — delegated to OS layer
-- Container/namespace isolation — process isolation is cwd-fixed level only
+- Container/namespace isolation — process isolation is currently limited to cwd control
 - SIEM forward — only local audit table (`GET /api/audit/export.csv`)
 - ClamAV real integration — currently stub (upload immediately READY)
 

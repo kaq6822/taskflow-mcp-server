@@ -132,7 +132,7 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_ENV` | `dev` | `dev` \| `production` |
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | 아티팩트·로그 루트 |
-| `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step subprocess cwd |
+| `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step `cwd` 미지정 시 사용할 기본 subprocess cwd |
 | `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩 |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | `run_job(sync)` 최대 대기 |
@@ -141,6 +141,23 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 콤마 구분 origin 화이트리스트 |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | production 모드의 SPA dist 경로 |
 | `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist 경로. 프로덕션은 `/etc/taskflow/allowlist.yaml` 같은 저장소 밖 경로 권장 |
+
+## Step cwd 관리
+
+Step은 기본적으로 `TASKFLOW_STEP_CWD`에서 실행됩니다. 특정 배포 Job처럼 실행 디렉토리가 필요한 경우 Builder 또는 REST Job 정의에서 Step별 `cwd`를 지정하세요.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300
+}
+```
+
+명시적 `cwd`는 실행 전에 이미 존재하는 디렉토리여야 합니다. 존재하지 않거나 파일이면 해당 Step은 `FAILED`가 됩니다. 운영 배포에서는 상대 경로보다 절대 경로를 권장합니다.
+
+`cd /path`를 별도 Step으로 두는 방식은 지원하지 않습니다. `cd`는 shell/process 상태 변경이라 다음 Step에 전달되지 않으며, TaskFlow는 이를 `policy.violation`으로 거부합니다.
 
 ## argv allowlist 관리
 
@@ -161,7 +178,7 @@ argv allowlist는 **환경별** 설정입니다:
 | 경로 | 내용 |
 |---|---|
 | `backend/taskflow.db` | SQLite DB (jobs, runs, audit, keys) |
-| `backend/storage/runtime/` | Step subprocess cwd |
+| `backend/storage/runtime/` | Step 기본 subprocess cwd (`TASKFLOW_STEP_CWD` 기본값) |
 | `backend/storage/logs/<run_id>/<step_id>.log` | Step 로그 파일 |
 | `backend/storage/artifacts/` | 업로드된 아티팩트 바이너리 |
 | `logs/taskflow.log`, `logs/*.pid` | `make start-bg` 로그·PID |

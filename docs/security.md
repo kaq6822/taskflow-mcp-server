@@ -35,9 +35,22 @@ allow:
 
 프리픽스 매칭이므로 `["npm", "ci"]`는 `npm ci --silent`를 허용하지만 `npm install`은 거부됩니다.
 
-### 3. 고정 cwd
+### 3. 제어된 cwd
 
-모든 Step은 `./storage/runtime` (기본값) 에서 실행됩니다. `TASKFLOW_STEP_CWD`로 override 가능하지만, subprocess가 레포 루트나 임의 경로를 cwd로 잡는 경로는 없습니다.
+Step은 기본적으로 `./storage/runtime`에서 실행됩니다. 이 기본값은 `TASKFLOW_STEP_CWD`로 override할 수 있습니다.
+
+Job 작성자가 특정 Step의 실행 디렉토리를 제어해야 하면 Step의 `cwd` 필드를 사용합니다.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300
+}
+```
+
+명시적 `cwd`는 비어 있으면 거부되고, 실행 시 존재하지 않거나 디렉토리가 아니면 해당 Step은 `FAILED`가 됩니다. `cd`, `pushd`, `popd`는 Step 명령으로 사용할 수 없습니다. 디렉토리 변경은 shell/process 상태 변경이라 다음 Step에 전달되지 않으므로 `cwd` 필드로 표현해야 합니다.
 
 ### 4. 시크릿 환경변수 마스킹
 
@@ -72,8 +85,8 @@ curl http://localhost:8000/api/audit/verify
 
 ## 정책 우회가 불가능한 이유
 
-- Job 생성 시점(UI/REST) — DAG 파서가 argv 형식 검증 + shell 문자열 거부
-- Run 시작 시점 — policies.py가 allowlist 재검증
+- Job 생성 시점(UI/REST) — DAG 파서가 argv 형식과 `cwd` 형식 검증 + shell 문자열/상태 변경 명령 거부
+- Run 시작 시점 — policies.py가 allowlist와 상태 변경 명령 재검증
 - subprocess 시점 — `create_subprocess_exec`는 shell 해석을 수행하지 않음 (execve 직행)
 
 세 지점 모두에서 실패 시 `policy.violation` audit + run FAILED.
@@ -83,7 +96,7 @@ curl http://localhost:8000/api/audit/verify
 보안 모델상 다음은 스코프 밖입니다:
 
 - 네트워크 egress 제어 (방화벽/seccomp) — OS 계층으로 위임
-- 컨테이너/namespace 격리 — 프로세스 격리는 cwd 고정 수준
+- 컨테이너/namespace 격리 — 현재 프로세스 격리는 cwd 제어 수준
 - SIEM forward — 로컬 audit 테이블만 제공 (`GET /api/audit/export.csv`)
 - ClamAV 실제 연동 — 현재 stub (업로드 즉시 READY)
 

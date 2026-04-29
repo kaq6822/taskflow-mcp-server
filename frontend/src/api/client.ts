@@ -7,6 +7,7 @@ export type Step = {
   on_failure: 'STOP' | 'CONTINUE' | 'RETRY' | 'ROLLBACK';
   deps: string[];
   env?: Record<string, string>;
+  cwd?: string | null;
 };
 
 export type Job = {
@@ -140,6 +141,8 @@ export const api = {
     }),
   cancelRun: (id: number) =>
     req<Run>(`/api/runs/${id}/cancel`, { method: 'POST', body: '{}' }),
+  cancelJobRun: (jobId: string) =>
+    req<Run>(`/api/jobs/${jobId}/runs/cancel`, { method: 'POST', body: '{}' }),
 
   listArtifacts: () => req<Artifact[]>('/api/artifacts'),
   uploadArtifact: async (name: string, version: string, ext: string, file: File) => {

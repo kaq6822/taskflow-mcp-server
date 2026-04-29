@@ -192,6 +192,7 @@ function validateDraft(
   isExisting: boolean
 ): ValidationResult {
   const errs: string[] = [];
+  const stateCommands = new Set(['cd', 'pushd', 'popd']);
   if (!isExisting && !/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
   if (!d.name) errs.push(t.err_name_required);
   const ids = new Set<string>();
@@ -201,6 +202,9 @@ function validateDraft(
     ids.add(s.id);
     if (!Array.isArray(s.cmd) || s.cmd.length === 0 || s.cmd.some((c) => typeof c !== 'string'))
       errs.push(`${s.id}: cmd must be argv array`);
+    const head = typeof s.cmd[0] === 'string' ? s.cmd[0].split('/').filter(Boolean).at(-1) : undefined;
+    if (head && stateCommands.has(head)) errs.push(t.err_state_command(head));
+    if (s.cwd !== undefined && s.cwd !== null && !s.cwd.trim()) errs.push(`${s.id}: cwd must be non-empty`);
   }
   for (const s of d.steps) {
     for (const dep of s.deps || []) {
@@ -412,6 +416,15 @@ function Inspector({
               <option>ROLLBACK</option>
             </select>
           </div>
+        </div>
+        <div>
+          <label className="mono-s dim">Working directory (cwd)</label>
+          <input
+            className="input mono sm"
+            value={step.cwd || ''}
+            placeholder="default: TASKFLOW_STEP_CWD"
+            onChange={(e) => patch({ cwd: e.target.value || null })}
+          />
         </div>
         <div>
           <label className="mono-s dim">Depends on (comma-separated step ids)</label>

@@ -66,11 +66,28 @@ allow:
 
 See [Security](./security.en.md) for policy background.
 
+### `cd /path` step is rejected with `policy.violation`
+
+This is intentional. `cd` is shell/process state, and running it in a separate subprocess would not change the working directory of later steps. Use the step-level `cwd` field.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"]
+}
+```
+
+`pushd` and `popd` are rejected for the same reason.
+
 ### Run stays at `RUNNING` and does not progress
+
+In current versions, subprocess start failures such as missing executables, permission errors, and invalid `cwd` values are finalized as step `FAILED`. If the run was left behind by an older version, cancel it from Dashboard / Job Detail / Logs, or call `POST /api/runs/{id}/cancel`.
 
 Check the backend logs for `Task exception was never retrieved`. Most commonly:
 
 - The target command does not exist (`ENOENT`)
+- The explicit `cwd` does not exist or is not a directory
 - Rejected by allowlist mismatch, but the UI is still polling for status
 
 Stderr is recorded in `backend/storage/logs/<run_id>/<step_id>.log`.

@@ -12,6 +12,7 @@ export function Logs() {
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const setScreen = useStore((s) => s.setScreen);
   const startRun = useStore((s) => s.startRun);
+  const cancelRun = useStore((s) => s.cancelRun);
   const liveRun = useStore((s) => s.liveRun);
 
   const [selStep, setSelStep] = useState<string | null>(null);
@@ -65,20 +66,32 @@ export function Logs() {
         </span>
         <span
           className={`chip ${
-            run.status === 'SUCCESS' ? 'ok' : run.status === 'FAILED' ? 'err' : 'warn'
+            run.status === 'SUCCESS'
+              ? 'ok'
+              : run.status === 'FAILED'
+              ? 'err'
+              : run.status === 'RUNNING'
+              ? 'info live'
+              : 'warn'
           }`}
         >
           <span className="d" />
           {run.status}
         </span>
         <div className="spacer" />
-        <button
-          className="btn primary sm"
-          onClick={() => startRun(job.id)}
-          disabled={!!liveRun}
-        >
-          {t.rerun}
-        </button>
+        {run.status === 'RUNNING' ? (
+          <button className="btn danger sm" onClick={() => cancelRun(run.id)}>
+            {t.btn_stop}
+          </button>
+        ) : (
+          <button
+            className="btn primary sm"
+            onClick={() => startRun(job.id)}
+            disabled={!!liveRun}
+          >
+            {t.rerun}
+          </button>
+        )}
       </div>
 
       <div
@@ -249,7 +262,7 @@ export function Logs() {
             <div className="k">user</div>
             <div className="v">taskflow</div>
             <div className="k">cwd</div>
-            <div className="v">storage/runtime</div>
+            <div className="v">{curStep?.cwd || 'storage/runtime'}</div>
             <div className="k">shell</div>
             <div className="v">False</div>
           </div>

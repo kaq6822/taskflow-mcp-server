@@ -57,7 +57,7 @@ type State = {
   refreshAll: () => Promise<unknown>;
 
   startRun: (jobId: string) => Promise<void>;
-  cancelRun: () => Promise<void>;
+  cancelRun: (runId?: number) => Promise<void>;
 
   pushToast: (msg: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
@@ -172,16 +172,21 @@ export const useStore = create<State>()(
         }
       },
 
-      cancelRun: async () => {
+      cancelRun: async (runId?: number) => {
         const live = get().liveRun;
-        if (!live) return;
+        const targetId = runId ?? live?.id;
+        if (!targetId) return;
         try {
-          await api.cancelRun(live.id);
-          set({ liveRun: null });
+          await api.cancelRun(targetId);
+          if (live?.id === targetId) {
+            set({ liveRun: null });
+          }
           get().pushToast(translations[get().lang].toast_run_cancelled, 'err');
           get().refreshRuns();
+          get().refreshAudit();
         } catch (e) {
-          /* ignore */
+          const msg = e instanceof Error ? e.message : String(e);
+          get().pushToast(translations[get().lang].toast_run_cancel_fail(msg), 'err');
         }
       },
     }),

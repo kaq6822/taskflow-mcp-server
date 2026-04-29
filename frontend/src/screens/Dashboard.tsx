@@ -53,6 +53,7 @@ export function Dashboard() {
   const setSelectedJobId = useStore((s) => s.setSelectedJobId);
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const startRun = useStore((s) => s.startRun);
+  const cancelRun = useStore((s) => s.cancelRun);
   const selectedJobId = useStore((s) => s.selectedJobId);
 
   const [tag, setTag] = useState('all');
@@ -65,6 +66,8 @@ export function Dashboard() {
   const recentFailed = runs.filter(
     (r) => r.status === 'FAILED' || r.status === 'TIMEOUT'
   ).length;
+  const runningIds = new Set(runs.filter((r) => r.status === 'RUNNING').map((r) => r.id));
+  if (liveRun) runningIds.add(liveRun.id);
   const scheduled = jobs.filter((j) => j.schedule !== 'manual').length;
 
   const openJob = (id: string) => {
@@ -73,6 +76,7 @@ export function Dashboard() {
   };
 
   const lastRunFor = (jobId: string) => runs.find((r) => r.job_id === jobId);
+  const runningRunFor = (jobId: string) => runs.find((r) => r.job_id === jobId && r.status === 'RUNNING');
   const successRate = (jobId: string) => {
     const rs = runs.filter((r) => r.job_id === jobId);
     if (rs.length === 0) return 100;
@@ -106,7 +110,7 @@ export function Dashboard() {
         }}
       >
         <KpiCard label={t.kpi_total_jobs} value={jobs.length} />
-        <KpiCard label={t.kpi_running} value={liveRun ? 1 : 0} tone="info" />
+        <KpiCard label={t.kpi_running} value={runningIds.size} tone="info" />
         <KpiCard
           label={t.kpi_recent_fails}
           value={recentFailed}
@@ -175,9 +179,11 @@ export function Dashboard() {
             <tbody>
               {filtered.map((j) => {
                 const last = lastRunFor(j.id);
-                const running = liveRun && liveRun.job === j.id;
+                const runningRun = runningRunFor(j.id);
+                const running = liveRun?.job === j.id || !!runningRun;
                 const status = running ? 'RUNNING' : last?.status || 'NEW';
                 const ok = successRate(j.id);
+                const stopRunId = runningRun?.id ?? (liveRun?.job === j.id ? liveRun.id : null);
                 return (
                   <tr
                     key={j.id}
@@ -240,16 +246,28 @@ export function Dashboard() {
                       {runs.filter((r) => r.job_id === j.id).length}
                     </td>
                     <td>
-                      <button
-                        className="btn sm primary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          startRun(j.id);
-                        }}
-                        disabled={!!liveRun}
-                      >
-                        {t.btn_run}
-                      </button>
+                      {stopRunId ? (
+                        <button
+                          className="btn sm danger"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelRun(stopRunId);
+                          }}
+                        >
+                          {t.btn_stop}
+                        </button>
+                      ) : (
+                        <button
+                          className="btn sm primary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startRun(j.id);
+                          }}
+                          disabled={!!liveRun}
+                        >
+                          {t.btn_run}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

@@ -12,10 +12,11 @@ Backend REST API는 `http://localhost:8000`에서 서빙됩니다. Frontend(Vite
 | `POST /api/jobs` | Job 생성 |
 | `PATCH /api/jobs/{id}` | Job 수정 |
 | `DELETE /api/jobs/{id}` | Job 삭제 |
-| `POST /api/jobs/{id}/runs` | Run 트리거 (body: `{trigger, actor, idempotency_key?}`) |
+| `POST /api/jobs/{id}/runs` | Run 트리거 (body: `{trigger, actor, artifact_ref?, idempotency_key?}`) |
 | `GET /api/runs?job_id=&status=&limit=` | Run 이력 |
 | `GET /api/runs/{id}` | Run 단건 (`steps[]` 포함) |
 | `POST /api/runs/{id}/cancel` | Run 취소 |
+| `POST /api/jobs/{id}/runs/cancel` | 해당 Job의 실행 중 Run 취소 |
 | `GET /api/runs/{id}/stream` | SSE — `run.started` / `step.started` / `step.log` / `step.finished` / `run.finished` |
 | `GET /api/artifacts` | 아티팩트 목록 |
 | `POST /api/artifacts` | multipart 업로드 (`name`, `version`, `ext`, `uploader`, `file`) |
@@ -25,6 +26,22 @@ Backend REST API는 `http://localhost:8000`에서 서빙됩니다. Frontend(Vite
 | `GET /api/keys` | MCP Key 목록 |
 | `POST /api/keys` | Key 발급 (plaintext 1회 노출) |
 | `DELETE /api/keys/{id}` | Key revoke |
+
+## Job Step 필드
+
+`POST /api/jobs`, `PATCH /api/jobs/{id}`의 `steps[]` 항목은 다음 필드를 사용합니다:
+
+| 필드 | 설명 |
+|---|---|
+| `id` | Job 안에서 고유한 Step id |
+| `cmd` | `shell=False`로 실행되는 argv 배열. 문자열 shell 명령은 거부 |
+| `cwd` | 선택. Step 실행 디렉토리. 생략 시 `TASKFLOW_STEP_CWD` 사용 |
+| `timeout` | Step timeout 초 |
+| `deps` | 선행 Step id 배열 |
+| `on_failure` | `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` |
+| `env` | Step 전용 환경변수 |
+
+`cd`, `pushd`, `popd`는 Step 명령으로 사용할 수 없습니다. 작업 디렉토리는 `cwd` 필드로 지정하세요.
 
 ## SSE 이벤트 포맷
 

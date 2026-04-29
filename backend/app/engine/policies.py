@@ -9,6 +9,7 @@ from app.config import settings
 
 SHELL_FALSE = True  # 상수 — 변경 불가
 STEP_USER = "taskflow"
+_FORBIDDEN_STATE_COMMANDS = {"cd", "pushd", "popd"}
 
 _log = logging.getLogger(__name__)
 
@@ -86,6 +87,20 @@ def check_allowlist(argv: list[str]) -> None:
         if _matches(entry, argv):
             return
     raise AllowlistError(f"argv not in allowlist: {argv[0]}")
+
+
+def check_forbidden_state_command(argv: list[str]) -> None:
+    """Reject shell/process state commands that cannot affect later steps.
+
+    Directory changes are represented by Step.cwd, not by a standalone `cd`
+    process. A subprocess cannot mutate the TaskFlow worker's cwd or the next
+    subprocess' cwd.
+    """
+    if not argv:
+        return
+    name = Path(argv[0]).name
+    if name in _FORBIDDEN_STATE_COMMANDS:
+        raise AllowlistError(f"{name} is not a step command; set step.cwd instead")
 
 
 def reload_allowlist() -> None:

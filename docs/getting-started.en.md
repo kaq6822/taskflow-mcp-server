@@ -88,6 +88,22 @@ Commands you need (e.g., `zip`, or the absolute path of an environment-specific 
 
 This is an intentional restriction to prevent accidents. See [Security](./security.en.md) for policy background.
 
+## Step Working Directory (`cwd`)
+
+Steps run from `TASKFLOW_STEP_CWD` (`./storage/runtime`) by default. Deployment jobs that need a specific directory should set step-level `cwd`.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/cms/cms_api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300,
+  "deps": []
+}
+```
+
+Using `cd /cms/cms_api` as a separate step is not supported. `cd` cannot change the working directory of later steps, so represent it with `cwd`.
+
 ## Next Steps
 
 - Calling from an AI Agent → [MCP API](./mcp-api.en.md)

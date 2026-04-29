@@ -12,7 +12,12 @@ from app.config import settings
 from app.db import SessionLocal
 from app.engine.dag import topo_sort
 from app.engine.log_bus import log_bus
-from app.engine.policies import AllowlistError, check_allowlist, filter_env
+from app.engine.policies import (
+    AllowlistError,
+    check_allowlist,
+    check_forbidden_state_command,
+    filter_env,
+)
 from app.engine.worker import WorkerResult, execute_argv
 from app.models import Job, Run, RunStep, utcnow
 from app.services.audit import append_event
@@ -21,6 +26,13 @@ from app.services.audit import append_event
 def _ts() -> str:
     d = datetime.now(timezone.utc).astimezone()
     return d.strftime("%H:%M:%S")
+
+
+def _step_cwd(step_spec: dict) -> tuple[Path, bool]:
+    raw = step_spec.get("cwd")
+    if isinstance(raw, str) and raw.strip():
+        return Path(raw), True
+    return settings.step_cwd, False
 
 
 class RunEngine:
@@ -342,6 +354,7 @@ class RunEngine:
     ) -> WorkerResult:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
+        step_cwd, has_custom_cwd = _step_cwd(step_spec)
         sid = step_id
 
         # Mark RUNNING — short transaction. Clear any terminal fields left
@@ -378,12 +391,13 @@ class RunEngine:
                 "step_id": sid,
                 "ts": _ts(),
                 "lvl": "dim",
-                "text": f"cwd={settings.step_cwd} · timeout={timeout}s · shell=False",
+                "text": f"cwd={step_cwd} · timeout={timeout}s · shell=False",
             },
         )
 
         # Allowlist re-check (defense in depth)
         try:
+            check_forbidden_state_command(cmd)
             check_allowlist(cmd)
         except AllowlistError as e:
             async with SessionLocal() as s:
@@ -450,11 +464,12 @@ class RunEngine:
         # used to hold the SQLite writer lock for the full step timeout.
         result = await execute_argv(
             cmd,
-            cwd=settings.step_cwd,
+            cwd=step_cwd,
             timeout=timeout,
             env=env,
             log_path=log_path,
             on_line=on_line,
+            create_cwd=not has_custom_cwd,
         )
 
         # Finalize step state — short transaction.

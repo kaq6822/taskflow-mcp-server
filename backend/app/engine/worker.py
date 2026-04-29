@@ -23,23 +23,67 @@ async def execute_argv(
     env: dict[str, str],
     log_path: Path,
     on_line: Callable[[str, str], None] | None = None,
+    create_cwd: bool = True,
 ) -> WorkerResult:
     """Execute argv with shell=False semantics, stream stdout+stderr.
 
     - `argv` MUST be a list (enforced by Policies elsewhere).
-    - `cwd` is the fixed step working directory (creates if missing).
+    - `cwd` is the step working directory.
+    - `create_cwd` keeps the default runtime directory bootstrap behavior.
     - Output lines are appended to `log_path` and mirrored via `on_line(stream, text)`.
     """
-    cwd.mkdir(parents=True, exist_ok=True)
     start = time.monotonic()
+    if create_cwd:
+        cwd.mkdir(parents=True, exist_ok=True)
+    elif not cwd.exists():
+        return _spawn_failure(
+            start,
+            log_path,
+            on_line,
+            exit_code=126,
+            message=f"cwd not found: {cwd}",
+        )
+    elif not cwd.is_dir():
+        return _spawn_failure(
+            start,
+            log_path,
+            on_line,
+            exit_code=126,
+            message=f"cwd is not a directory: {cwd}",
+        )
 
-    proc = await asyncio.create_subprocess_exec(
-        *argv,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=str(cwd),
-        env=env,
-    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *argv,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd),
+            env=env,
+        )
+    except FileNotFoundError:
+        return _spawn_failure(
+            start,
+            log_path,
+            on_line,
+            exit_code=127,
+            message=f"executable not found: {argv[0]}",
+        )
+    except PermissionError:
+        return _spawn_failure(
+            start,
+            log_path,
+            on_line,
+            exit_code=126,
+            message=f"permission denied: {argv[0]}",
+        )
+    except OSError as e:
+        return _spawn_failure(
+            start,
+            log_path,
+            on_line,
+            exit_code=126,
+            message=f"failed to start process: {e}",
+        )
 
     async def _drain(stream: asyncio.StreamReader, name: str, f):
         while True:
@@ -85,4 +129,29 @@ async def execute_argv(
         elapsed=elapsed,
         exit_code=exit_code,
         err_message=f"non-zero exit {exit_code}",
+    )
+
+
+def _spawn_failure(
+    start: float,
+    log_path: Path,
+    on_line: Callable[[str, str], None] | None,
+    *,
+    exit_code: int,
+    message: str,
+) -> WorkerResult:
+    elapsed = time.monotonic() - start
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("ab") as f:
+        f.write((message + "\n").encode())
+    if on_line is not None:
+        try:
+            on_line("stderr", message)
+        except Exception:
+            pass
+    return WorkerResult(
+        state="FAILED",
+        elapsed=elapsed,
+        exit_code=exit_code,
+        err_message=message,
     )

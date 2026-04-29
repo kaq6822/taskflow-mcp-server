@@ -12,10 +12,11 @@ The Backend REST API is served at `http://localhost:8000`. The Frontend (Vite de
 | `POST /api/jobs` | Create job |
 | `PATCH /api/jobs/{id}` | Update job |
 | `DELETE /api/jobs/{id}` | Delete job |
-| `POST /api/jobs/{id}/runs` | Trigger a run (body: `{trigger, actor, idempotency_key?}`) |
+| `POST /api/jobs/{id}/runs` | Trigger a run (body: `{trigger, actor, artifact_ref?, idempotency_key?}`) |
 | `GET /api/runs?job_id=&status=&limit=` | Run history |
 | `GET /api/runs/{id}` | Single run (includes `steps[]`) |
 | `POST /api/runs/{id}/cancel` | Cancel run |
+| `POST /api/jobs/{id}/runs/cancel` | Cancel the currently running run for a job |
 | `GET /api/runs/{id}/stream` | SSE — `run.started` / `step.started` / `step.log` / `step.finished` / `run.finished` |
 | `GET /api/artifacts` | List artifacts |
 | `POST /api/artifacts` | Multipart upload (`name`, `version`, `ext`, `uploader`, `file`) |
@@ -25,6 +26,22 @@ The Backend REST API is served at `http://localhost:8000`. The Frontend (Vite de
 | `GET /api/keys` | List MCP keys |
 | `POST /api/keys` | Issue key (plaintext shown once) |
 | `DELETE /api/keys/{id}` | Revoke key |
+
+## Job Step Fields
+
+`steps[]` entries in `POST /api/jobs` and `PATCH /api/jobs/{id}` use these fields:
+
+| Field | Description |
+|---|---|
+| `id` | Step id, unique within the job |
+| `cmd` | argv array executed with `shell=False`; shell command strings are rejected |
+| `cwd` | Optional. Step working directory. Defaults to `TASKFLOW_STEP_CWD` |
+| `timeout` | Step timeout in seconds |
+| `deps` | Array of upstream step ids |
+| `on_failure` | `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` |
+| `env` | Step-specific environment variables |
+
+`cd`, `pushd`, and `popd` cannot be used as step commands. Set the working directory with `cwd` instead.
 
 ## SSE Event Format
 
