@@ -95,14 +95,14 @@ Step은 기본적으로 `TASKFLOW_STEP_CWD`(`./storage/runtime`)에서 실행됩
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"],
   "timeout": 300,
   "deps": []
 }
 ```
 
-`cd /cms/cms_api`를 별도 Step으로 두는 방식은 지원하지 않습니다. `cd`는 다음 Step의 작업 디렉토리를 바꾸지 못하므로 `cwd` 필드로 표현합니다.
+`cd /opt/taskflow/apps/api`를 별도 Step으로 두는 방식은 지원하지 않습니다. `cd`는 다음 Step의 작업 디렉토리를 바꾸지 못하므로 `cwd` 필드로 표현합니다.
 
 ## 출력 기반 성공/실패 판정
 

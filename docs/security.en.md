@@ -44,7 +44,7 @@ If a job author needs a specific working directory for a step, use the step-leve
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"],
   "timeout": 300
 }

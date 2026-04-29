@@ -73,7 +73,7 @@ allow:
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"]
 }
 ```

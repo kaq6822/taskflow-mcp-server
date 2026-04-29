@@ -149,7 +149,7 @@ Step은 기본적으로 `TASKFLOW_STEP_CWD`에서 실행됩니다. 특정 배포
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"],
   "timeout": 300
 }

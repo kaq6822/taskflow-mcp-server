@@ -95,14 +95,14 @@ Steps run from `TASKFLOW_STEP_CWD` (`./storage/runtime`) by default. Deployment 
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"],
   "timeout": 300,
   "deps": []
 }
 ```
 
-Using `cd /cms/cms_api` as a separate step is not supported. `cd` cannot change the working directory of later steps, so represent it with `cwd`.
+Using `cd /opt/taskflow/apps/api` as a separate step is not supported. `cd` cannot change the working directory of later steps, so represent it with `cwd`.
 
 ## Output-Based Success / Failure Checks
 

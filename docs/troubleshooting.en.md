@@ -73,7 +73,7 @@ This is intentional. `cd` is shell/process state, and running it in a separate s
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"]
 }
 ```

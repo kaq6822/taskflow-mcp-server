@@ -149,7 +149,7 @@ Steps run from `TASKFLOW_STEP_CWD` by default. For deployment jobs that need a s
 ```json
 {
   "id": "deploy",
-  "cwd": "/cms/cms_api",
+  "cwd": "/opt/taskflow/apps/api",
   "cmd": ["./deploy.sh"],
   "timeout": 300
 }
