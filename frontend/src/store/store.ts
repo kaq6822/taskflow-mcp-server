@@ -57,11 +57,35 @@ type State = {
   refreshAll: () => Promise<unknown>;
 
   startRun: (jobId: string) => Promise<void>;
-  cancelRun: () => Promise<void>;
+  cancelRun: (runId?: number) => Promise<void>;
 
   pushToast: (msg: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
 };
+
+function detectInitialLang(): Lang {
+  if (typeof navigator === 'undefined') return 'ko';
+  const languages = [...(navigator.languages || []), navigator.language]
+    .filter(Boolean)
+    .map((lang) => lang.toLowerCase());
+  return languages.some((lang) => lang === 'ko' || lang.startsWith('ko-')) ? 'ko' : 'en';
+}
+
+let activeRunStreamId: number | null = null;
+let closeActiveRunStream: (() => void) | null = null;
+
+function replaceActiveRunStream(runId: number, close: () => void) {
+  closeActiveRunStream?.();
+  activeRunStreamId = runId;
+  closeActiveRunStream = close;
+}
+
+function closeRunStream(runId: number) {
+  if (activeRunStreamId !== runId) return;
+  closeActiveRunStream?.();
+  activeRunStreamId = null;
+  closeActiveRunStream = null;
+}
 
 export const useStore = create<State>()(
   persist(
@@ -79,7 +103,7 @@ export const useStore = create<State>()(
 
       liveRun: null,
       toasts: [],
-      lang: 'ko' as Lang,
+      lang: detectInitialLang(),
 
       setScreen: (s) => set({ screen: s }),
       setSelectedJobId: (id) => set({ selectedJobId: id }),
@@ -129,6 +153,23 @@ export const useStore = create<State>()(
 
           const close = subscribeRun(run.id, (ev) => {
             const cur = get().liveRun;
+            if (ev.event === 'run.finished') {
+              const status = (ev.data.status || 'SUCCESS') as LiveRun['status'];
+              closeRunStream(run.id);
+              if (cur?.id === run.id) {
+                set({
+                  liveRun: null,
+                  selectedRunId: run.id,
+                });
+                get().pushToast(
+                  translations[get().lang].toast_run_done(run.id, status),
+                  status === 'SUCCESS' ? 'ok' : 'err'
+                );
+              }
+              get().refreshRuns();
+              get().refreshAudit();
+              return;
+            }
             if (!cur || cur.id !== run.id) return;
             if (ev.event === 'step.started') {
               const next = { ...cur, stepStates: { ...cur.stepStates } };
@@ -151,37 +192,31 @@ export const useStore = create<State>()(
               s.elapsed = ev.data.elapsed_sec;
               next.stepStates[ev.data.step_id] = s;
               set({ liveRun: next });
-            } else if (ev.event === 'run.finished') {
-              const status = (ev.data.status || 'SUCCESS') as LiveRun['status'];
-              set({
-                liveRun: null,
-                selectedRunId: run.id,
-              });
-              get().pushToast(
-                translations[get().lang].toast_run_done(run.id, status),
-                status === 'SUCCESS' ? 'ok' : 'err'
-              );
-              close();
-              get().refreshRuns();
-              get().refreshAudit();
             }
           });
+          replaceActiveRunStream(run.id, close);
         } catch (e: unknown) {
           const msg = e instanceof Error ? e.message : String(e);
           get().pushToast(translations[get().lang].toast_run_start_fail(msg), 'err');
         }
       },
 
-      cancelRun: async () => {
+      cancelRun: async (runId?: number) => {
         const live = get().liveRun;
-        if (!live) return;
+        const targetId = runId ?? live?.id;
+        if (!targetId) return;
         try {
-          await api.cancelRun(live.id);
-          set({ liveRun: null });
+          await api.cancelRun(targetId);
+          if (live?.id === targetId) {
+            closeRunStream(targetId);
+            set({ liveRun: null, selectedRunId: targetId });
+          }
           get().pushToast(translations[get().lang].toast_run_cancelled, 'err');
           get().refreshRuns();
+          get().refreshAudit();
         } catch (e) {
-          /* ignore */
+          const msg = e instanceof Error ? e.message : String(e);
+          get().pushToast(translations[get().lang].toast_run_cancel_fail(msg), 'err');
         }
       },
     }),

@@ -104,7 +104,7 @@ export function Monitor() {
           LIVE
         </span>
         <div className="spacer" />
-        <button className="btn sm danger" onClick={cancelRun}>
+        <button className="btn sm danger" onClick={() => cancelRun()}>
           ■ stop
         </button>
       </div>

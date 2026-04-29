@@ -109,3 +109,42 @@ async def cancel_run(
     )
     await session.refresh(run, ["steps"])
     return run
+
+
+@router.post("/jobs/{job_id}/runs/cancel", response_model=RunOut)
+async def cancel_job_run(
+    job_id: str, request: Request, session: AsyncSession = Depends(get_session)
+) -> Run:
+    job = await session.get(Job, job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
+
+    engine = get_engine()
+    run_id = engine.live_run_for(job_id)
+    if run_id is None:
+        row = (
+            await session.execute(
+                select(Run)
+                .where(Run.job_id == job_id, Run.status == "RUNNING")
+                .order_by(Run.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        run_id = row.id if row else None
+    if run_id is None:
+        raise HTTPException(404, "no running run for job")
+
+    run = await engine.cancel(session, run_id)
+    if not run:
+        raise HTTPException(404, "run not found or already finished")
+    await append_event(
+        session,
+        who=request.headers.get("X-Actor", "admin"),
+        kind="job.run.cancel",
+        target=f"{run.job_id} #{run.id}",
+        src="web",
+        ip=request.client.host if request.client else "",
+        result="OK",
+    )
+    await session.refresh(run, ["steps"])
+    return run

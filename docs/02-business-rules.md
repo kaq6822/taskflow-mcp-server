@@ -5,7 +5,7 @@
 | 개념 | 정의 |
 |---|---|
 | **Job** | 하나의 Workflow 정의. 여러 Step의 DAG + 실행 정책(스케줄/동시성/타임아웃/실패 처리)으로 구성. |
-| **Step** | Job 안의 실행 단위. `argv` 배열 명령어 + 타임아웃 + 의존성(`deps`) + 실패 정책. |
+| **Step** | Job 안의 실행 단위. `argv` 배열 명령어 + 작업 디렉토리(`cwd`) + 타임아웃 + 의존성(`deps`) + 실패 정책. |
 | **Run** | Job을 특정 시점에 실행한 인스턴스. 상태 · 로그 · 소요시간 · 트리거 · 실행자 포함. |
 | **Trigger** | Run을 발생시킨 주체. `manual` / `schedule`(cron) / `mcp`(AI Agent) 중 하나. |
 | **Artifact** | Job Step이 소비하는 배포 산출물. 버전 · 해시 · 서명 · 소비 Job 메타 포함. |
@@ -31,6 +31,10 @@
 
 - `id`는 Job 내 **고유**. Workflow Builder 검증에서 "모든 step id 고유" 체크.
 - `cmd`는 **반드시 argv 배열** (shell injection 방지, `shell=False` 강제). 문자열 단일 명령은 금지.
+- `cwd`는 선택 필드. 생략 시 `TASKFLOW_STEP_CWD` 기본값(`./storage/runtime`) 사용. 명시하면 해당 디렉토리가 Step subprocess의 작업 디렉토리가 됨.
+- `cd`, `pushd`, `popd` 같은 shell/process 상태 변경 명령은 Step 명령으로 금지. 작업 위치 변경은 `cwd`로 표현.
+- `success_contains`는 선택 필드. 프로세스가 exit 0으로 끝난 뒤 stdout/stderr에 지정 문자열이 모두 포함되어야 SUCCESS.
+- `failure_contains`는 선택 필드. stdout/stderr에 지정 문자열 중 하나라도 포함되면 exit code와 무관하게 FAILED.
 - `deps`는 같은 Job 내의 다른 step id 배열. **비순환(DAG)**이어야 함.
 - `timeout`은 Step 레벨이며 Job `timeout`과 독립.
 - `onFailure`: `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK` 중 하나. Step이 실패했을 때 Run이 어떻게 진행될지 결정.
@@ -67,18 +71,20 @@
 ### 3.3 Run 실행 제약
 
 - **동시성 1:** 현재 `liveRun`이 있으면 새 Run 시작은 거부 + `이미 실행 중인 Run이 있습니다` toast(err).
-- **Cancel:** `cancelRun()`은 `liveRun`을 `FAILED`로 종료. 실패 지점은 `order[currentIdx]`, err 메시지는 `사용자 취소`.
+- **Cancel:** `cancelRun(run_id)` 또는 `cancelJobRun(job_id)`은 실행 중 Run을 `FAILED`로 종료. err 메시지는 `사용자 취소`.
 
 ### 3.4 Step 상태 전이 (Run 내부)
 
 ```
 PENDING → RUNNING → SUCCESS (exit 0)
                   → FAILED (exit ≠ 0, err 기록)
+                  → FAILED (failure_contains 매칭 또는 success_contains 누락)
                   → TIMEOUT (elapsed > step.timeout)
                   → SKIPPED (앞 step이 STOP으로 실패)
 ```
 
-- `RUNNING` 진입 시 `$ <cmd>` 로그 1줄 + `cwd=/srv/app · timeout=Xs · shell=False` 메타 로그 자동 기록.
+- `RUNNING` 진입 시 `$ <cmd>` 로그 1줄 + `cwd=<step.cwd|TASKFLOW_STEP_CWD> · timeout=Xs · shell=False` 메타 로그 자동 기록.
+- 출력 assertion이 있으면 `output assertions · success_contains=N · failure_contains=N` 메타 로그 자동 기록.
 - 완료 시 `✓ done (X.Xs · exit 0)` 로그.
 
 ## 4. 트리거 규칙
@@ -215,7 +221,7 @@ PENDING → RUNNING → SUCCESS (exit 0)
 
 - `shell=False` — subprocess shell 미사용, argv 기반.
 - `user=taskflow` — 전용 저권한 계정.
-- `cwd=/srv/app` — 고정 작업 디렉토리.
+- `cwd` — 기본은 `TASKFLOW_STEP_CWD`, Step별 `cwd` 지정 가능. `cd`류 상태 변경 명령은 거부.
 - `no-root` — root 권한 실행 금지.
 - **Allowlist**: argv 기반 허용 리스트 (화이트리스트). 외부에서 들어온 임의 cmd는 거부.
 
@@ -404,4 +410,3 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
 
 - Agent가 같은 배포를 중복 트리거하지 않도록 `run_job` 호출에 선택적 `idempotency_key`를 지원.
 - 동일 `idempotency_key`로 24시간 내 재호출 시 **새 Run을 만들지 않고** 기존 `run_id`를 반환.
-

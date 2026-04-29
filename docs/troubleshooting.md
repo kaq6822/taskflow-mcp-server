@@ -66,14 +66,40 @@ allow:
 
 정책 배경은 [Security](./security.md).
 
+### `cd /path` Step이 `policy.violation`으로 거부됨
+
+의도된 동작입니다. `cd`는 shell/process 상태 변경 명령이라 별도 subprocess로 실행해도 다음 Step의 작업 디렉토리를 바꾸지 못합니다. Step의 `cwd` 필드를 사용하세요.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/opt/taskflow/apps/api",
+  "cmd": ["./deploy.sh"]
+}
+```
+
+`pushd`, `popd`도 같은 이유로 거부됩니다.
+
 ### Run이 `RUNNING`에서 진행되지 않음
+
+최신 버전에서는 실행 파일 없음, 권한 없음, 잘못된 `cwd` 같은 subprocess 시작 실패가 Step `FAILED`로 정리됩니다. 이전 버전에서 남은 Run이라면 Dashboard/Job 상세/Logs 화면의 정지 버튼 또는 `POST /api/runs/{id}/cancel`로 취소하세요.
 
 Backend 로그에서 `Task exception was never retrieved`를 확인하세요. 대부분 다음 중 하나입니다:
 
 - 대상 커맨드가 존재하지 않음 (`ENOENT`)
+- 명시한 `cwd`가 존재하지 않거나 디렉토리가 아님
 - allowlist 미매칭으로 거부되었는데 UI가 아직 상태 폴링 중
 
 `backend/storage/logs/<run_id>/<step_id>.log` 파일에 stderr가 기록됩니다.
+
+### Step이 exit 0인데 `FAILED`가 됨
+
+Step에 출력 assertion이 설정되어 있는지 확인하세요.
+
+- `failure_contains`에 지정한 문자열이 stdout/stderr에 포함되면 실패합니다.
+- `success_contains`에 지정한 문자열이 하나라도 누락되면 실패합니다.
+
+Run 로그의 `output assertion failed: ...` 메시지와 `backend/storage/logs/<run_id>/<step_id>.log`를 함께 확인하세요.
 
 ### Run이 `TIMEOUT`으로 끝남
 

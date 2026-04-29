@@ -132,7 +132,7 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_ENV` | `dev` | `dev` \| `production` |
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | Artifact/log root |
-| `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step subprocess cwd |
+| `TASKFLOW_STEP_CWD` | `./storage/runtime` | Default subprocess cwd when a step does not set `cwd` |
 | `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | Max wait for `run_job(sync)` |
@@ -141,6 +141,23 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated origin whitelist |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | SPA dist path for production mode |
 | `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist path. For production, prefer an out-of-tree location such as `/etc/taskflow/allowlist.yaml` |
+
+## Step cwd Management
+
+Steps run from `TASKFLOW_STEP_CWD` by default. For deployment jobs that need a specific execution directory, set step-level `cwd` in the Builder or REST job definition.
+
+```json
+{
+  "id": "deploy",
+  "cwd": "/opt/taskflow/apps/api",
+  "cmd": ["./deploy.sh"],
+  "timeout": 300
+}
+```
+
+An explicit `cwd` must already exist and must be a directory. If it is missing or points to a file, the step ends as `FAILED`. For production deployment jobs, absolute paths are recommended over relative paths.
+
+Using `cd /path` as a separate step is not supported. `cd` is shell/process state that does not carry over to later steps, and TaskFlow rejects it as a `policy.violation`.
 
 ## argv Allowlist Management
 
@@ -161,7 +178,7 @@ In production, have your deployment tooling (Ansible, Terraform, Helm, etc.) set
 | Path | Contents |
 |---|---|
 | `backend/taskflow.db` | SQLite DB (jobs, runs, audit, keys) |
-| `backend/storage/runtime/` | Step subprocess cwd |
+| `backend/storage/runtime/` | Default Step subprocess cwd (`TASKFLOW_STEP_CWD` default) |
 | `backend/storage/logs/<run_id>/<step_id>.log` | Step log files |
 | `backend/storage/artifacts/` | Uploaded artifact binaries |
 | `logs/taskflow.log`, `logs/*.pid` | `make start-bg` log / PID files |

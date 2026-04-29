@@ -12,8 +12,13 @@ from app.config import settings
 from app.db import SessionLocal
 from app.engine.dag import topo_sort
 from app.engine.log_bus import log_bus
-from app.engine.policies import AllowlistError, check_allowlist, filter_env
-from app.engine.worker import WorkerResult, execute_argv
+from app.engine.policies import (
+    AllowlistError,
+    check_allowlist,
+    check_forbidden_state_command,
+    filter_env,
+)
+from app.engine.worker import OutputAssertions, WorkerResult, execute_argv
 from app.models import Job, Run, RunStep, utcnow
 from app.services.audit import append_event
 
@@ -21,6 +26,16 @@ from app.services.audit import append_event
 def _ts() -> str:
     d = datetime.now(timezone.utc).astimezone()
     return d.strftime("%H:%M:%S")
+
+
+def _step_cwd(step_spec: dict) -> tuple[Path, bool]:
+    raw = step_spec.get("cwd")
+    if isinstance(raw, str) and raw.strip():
+        return Path(raw), True
+    return settings.step_cwd, False
+
+
+CANCELLED_MESSAGE = "사용자 취소"
 
 
 class RunEngine:
@@ -88,19 +103,63 @@ class RunEngine:
     async def cancel(self, session: AsyncSession, run_id: int) -> Run | None:
         run = await session.get(Run, run_id)
         if not run or run.status != "RUNNING":
-            return run
-        self._cancelled.add(run_id)
+            return None
         task = self._tasks.get(run_id)
-        if task:
+        if task and not task.done():
+            self._cancelled.add(run_id)
             task.cancel()
-        # Mark run-level state immediately so the cancel HTTP response is
-        # accurate; _run_loop's cancel-finalizer will also update this view,
-        # but racing clients that poll before the loop settles still see it.
-        run.status = "FAILED"
-        run.err_message = "사용자 취소"
-        run.finished_at = utcnow()
+        else:
+            task = None
+            self._tasks.pop(run_id, None)
+            self._pending_launch.pop(run_id, None)
+            if self._live.get(run.job_id) == run_id:
+                self._live.pop(run.job_id, None)
+        # Mark state immediately so the cancel HTTP response is accurate.
+        # If there is no live task, this is the only finalizer that will run.
+        await self._mark_cancelled(session, run)
         await session.flush()
+        if task is None:
+            self._cancelled.discard(run_id)
+            self._publish_cancelled(run)
         return run
+
+    async def _mark_cancelled(self, session: AsyncSession, run: Run) -> None:
+        now = utcnow()
+        run.status = "FAILED"
+        run.err_message = run.err_message or CANCELLED_MESSAGE
+        run.finished_at = run.finished_at or now
+        run.duration_sec = (run.finished_at - run.started_at).total_seconds()
+
+        zombies = (
+            await session.execute(
+                select(RunStep).where(RunStep.run_id == run.id, RunStep.state == "RUNNING")
+            )
+        ).scalars().all()
+        failed_step = run.failed_step
+        for rs in zombies:
+            rs.state = "FAILED"
+            rs.finished_at = rs.finished_at or now
+            if rs.started_at is not None:
+                rs.elapsed_sec = max(
+                    rs.elapsed_sec or 0.0,
+                    (rs.finished_at - rs.started_at).total_seconds(),
+                )
+            if failed_step is None:
+                failed_step = rs.step_id
+        run.failed_step = failed_step
+
+    def _publish_cancelled(self, run: Run) -> None:
+        log_bus.publish(
+            run.id,
+            "run.finished",
+            {
+                "run_id": run.id,
+                "status": "FAILED",
+                "failed_step": run.failed_step,
+                "err_message": run.err_message,
+                "duration_sec": run.duration_sec,
+            },
+        )
 
     async def _run_loop(self, job_id: str, run_id: int) -> None:
         """Owned by engine. Re-opens its own DB session."""
@@ -228,7 +287,7 @@ class RunEngine:
             run.duration_sec = (run.finished_at - started_at).total_seconds()
             if run_id in self._cancelled:
                 run.status = "FAILED"
-                run.err_message = err_message or "사용자 취소"
+                run.err_message = err_message or CANCELLED_MESSAGE
                 run.failed_step = failed_step
             elif failed:
                 run.status = (
@@ -278,26 +337,7 @@ class RunEngine:
                 run = await s.get(Run, run_id)
                 if run is None:
                     return
-                if run.status == "RUNNING":
-                    run.status = "FAILED"
-                    run.err_message = run.err_message or "사용자 취소"
-                    run.finished_at = utcnow()
-                    run.duration_sec = (
-                        run.finished_at - run.started_at
-                    ).total_seconds()
-                # With per-step commits the step that was mid-execution stays
-                # at RUNNING after cancellation. Flip any such zombies to
-                # FAILED so the Run schema stays consistent for clients.
-                zombies = (
-                    await s.execute(
-                        select(RunStep).where(
-                            RunStep.run_id == run_id, RunStep.state == "RUNNING"
-                        )
-                    )
-                ).scalars().all()
-                for rs in zombies:
-                    rs.state = "FAILED"
-                    rs.finished_at = rs.finished_at or utcnow()
+                await self._mark_cancelled(s, run)
                 await append_event(
                     s,
                     who=run.actor,
@@ -306,17 +346,7 @@ class RunEngine:
                     src="mcp" if run.trigger == "mcp" else "web",
                     result="FAIL",
                 )
-            log_bus.publish(
-                run_id,
-                "run.finished",
-                {
-                    "run_id": run_id,
-                    "status": "FAILED",
-                    "failed_step": run.failed_step,
-                    "err_message": run.err_message,
-                    "duration_sec": run.duration_sec,
-                },
-            )
+            self._publish_cancelled(run)
         except Exception:
             # Last-resort: always close the stream for subscribers.
             log_bus.publish(
@@ -342,6 +372,11 @@ class RunEngine:
     ) -> WorkerResult:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
+        step_cwd, has_custom_cwd = _step_cwd(step_spec)
+        assertions = OutputAssertions(
+            success_contains=list(step_spec.get("success_contains") or []),
+            failure_contains=list(step_spec.get("failure_contains") or []),
+        )
         sid = step_id
 
         # Mark RUNNING — short transaction. Clear any terminal fields left
@@ -378,12 +413,29 @@ class RunEngine:
                 "step_id": sid,
                 "ts": _ts(),
                 "lvl": "dim",
-                "text": f"cwd={settings.step_cwd} · timeout={timeout}s · shell=False",
+                "text": f"cwd={step_cwd} · timeout={timeout}s · shell=False",
             },
         )
+        if assertions.success_contains or assertions.failure_contains:
+            parts = []
+            if assertions.success_contains:
+                parts.append(f"success_contains={len(assertions.success_contains)}")
+            if assertions.failure_contains:
+                parts.append(f"failure_contains={len(assertions.failure_contains)}")
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "dim",
+                    "text": "output assertions · " + " · ".join(parts),
+                },
+            )
 
         # Allowlist re-check (defense in depth)
         try:
+            check_forbidden_state_command(cmd)
             check_allowlist(cmd)
         except AllowlistError as e:
             async with SessionLocal() as s:
@@ -450,11 +502,13 @@ class RunEngine:
         # used to hold the SQLite writer lock for the full step timeout.
         result = await execute_argv(
             cmd,
-            cwd=settings.step_cwd,
+            cwd=step_cwd,
             timeout=timeout,
             env=env,
             log_path=log_path,
             on_line=on_line,
+            create_cwd=not has_custom_cwd,
+            assertions=assertions,
         )
 
         # Finalize step state — short transaction.

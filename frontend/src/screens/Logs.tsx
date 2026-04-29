@@ -12,6 +12,7 @@ export function Logs() {
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const setScreen = useStore((s) => s.setScreen);
   const startRun = useStore((s) => s.startRun);
+  const cancelRun = useStore((s) => s.cancelRun);
   const liveRun = useStore((s) => s.liveRun);
 
   const [selStep, setSelStep] = useState<string | null>(null);
@@ -65,20 +66,32 @@ export function Logs() {
         </span>
         <span
           className={`chip ${
-            run.status === 'SUCCESS' ? 'ok' : run.status === 'FAILED' ? 'err' : 'warn'
+            run.status === 'SUCCESS'
+              ? 'ok'
+              : run.status === 'FAILED'
+              ? 'err'
+              : run.status === 'RUNNING'
+              ? 'info live'
+              : 'warn'
           }`}
         >
           <span className="d" />
           {run.status}
         </span>
         <div className="spacer" />
-        <button
-          className="btn primary sm"
-          onClick={() => startRun(job.id)}
-          disabled={!!liveRun}
-        >
-          {t.rerun}
-        </button>
+        {run.status === 'RUNNING' ? (
+          <button className="btn danger sm" onClick={() => cancelRun(run.id)}>
+            {t.btn_stop}
+          </button>
+        ) : (
+          <button
+            className="btn primary sm"
+            onClick={() => startRun(job.id)}
+            disabled={!!liveRun}
+          >
+            {t.rerun}
+          </button>
+        )}
       </div>
 
       <div
@@ -249,7 +262,7 @@ export function Logs() {
             <div className="k">user</div>
             <div className="v">taskflow</div>
             <div className="k">cwd</div>
-            <div className="v">storage/runtime</div>
+            <div className="v">{curStep?.cwd || 'storage/runtime'}</div>
             <div className="k">shell</div>
             <div className="v">False</div>
           </div>
@@ -261,6 +274,24 @@ export function Logs() {
                   <span className="lvl-cmd">$ {curStep.cmd.join(' ')}</span>
                 </div>
               </div>
+              {((curStep.success_contains || []).length > 0 ||
+                (curStep.failure_contains || []).length > 0) && (
+                <>
+                  <div className="ctitle" style={{ marginTop: 12 }}>Output Assertions</div>
+                  <div className="col mono-s" style={{ gap: 4 }}>
+                    {(curStep.success_contains || []).map((p) => (
+                      <div key={`ok-${p}`}>
+                        <span className="chip ok">must contain</span> {p}
+                      </div>
+                    ))}
+                    {(curStep.failure_contains || []).map((p) => (
+                      <div key={`fail-${p}`}>
+                        <span className="chip err">fail on</span> {p}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

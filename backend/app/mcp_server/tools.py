@@ -308,7 +308,9 @@ def register_tools(mcp: FastMCP) -> None:
                 raise RuntimeError(f"NOT_FOUND: run {run_id}")
             auth = await _require(ctx, f"run:{r.job_id}", target=f"{r.job_id} #{run_id}")
             engine = get_engine()
-            await engine.cancel(s, run_id)
+            cancelled = await engine.cancel(s, run_id)
+            if not cancelled:
+                raise RuntimeError(f"NOT_RUNNING: run {run_id} is not running")
             await append_event(
                 s,
                 who=auth.label,

@@ -13,6 +13,9 @@ class StepSpec(BaseModel):
     on_failure: Literal["STOP", "CONTINUE", "RETRY", "ROLLBACK"] = "STOP"
     deps: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    cwd: str | None = None
+    success_contains: list[str] = Field(default_factory=list)
+    failure_contains: list[str] = Field(default_factory=list)
 
 
 class JobCreate(BaseModel):

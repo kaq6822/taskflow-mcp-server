@@ -20,6 +20,7 @@ export function JobDetail() {
   const setScreen = useStore((s) => s.setScreen);
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const startRun = useStore((s) => s.startRun);
+  const cancelRun = useStore((s) => s.cancelRun);
   const liveRun = useStore((s) => s.liveRun);
   const [tab, setTab] = useState<'overview' | 'runs' | 'yaml'>('overview');
 
@@ -35,6 +36,8 @@ export function JobDetail() {
     );
   }
   const jobRuns = runs.filter((r) => r.job_id === job.id);
+  const runningRun = jobRuns.find((r) => r.status === 'RUNNING');
+  const stopRunId = runningRun?.id ?? (liveRun?.job === job.id ? liveRun.id : null);
 
   const successRate = jobRuns.length
     ? Math.round((jobRuns.filter((r) => r.status === 'SUCCESS').length / jobRuns.length) * 100)
@@ -63,13 +66,19 @@ export function JobDetail() {
         <button className="btn ghost sm" onClick={() => setScreen('builder')}>
           ✎ Edit
         </button>
-        <button
-          className="btn primary sm"
-          onClick={() => startRun(job.id)}
-          disabled={!!liveRun}
-        >
-          {t.btn_run}
-        </button>
+        {stopRunId ? (
+          <button className="btn danger sm" onClick={() => cancelRun(stopRunId)}>
+            {t.btn_stop}
+          </button>
+        ) : (
+          <button
+            className="btn primary sm"
+            onClick={() => startRun(job.id)}
+            disabled={!!liveRun}
+          >
+            {t.btn_run}
+          </button>
+        )}
       </div>
 
       <div className="tabs" style={{ paddingLeft: 18 }}>
@@ -91,7 +100,13 @@ export function JobDetail() {
       {tab === 'overview' && (
         <OverviewTab job={job} runs={jobRuns} successRate={successRate} avgDur={avgDur} />
       )}
-      {tab === 'runs' && <RunsTab runs={jobRuns} onOpen={(id) => { setSelectedRunId(id); setScreen('logs'); }} />}
+      {tab === 'runs' && (
+        <RunsTab
+          runs={jobRuns}
+          onOpen={(id) => { setSelectedRunId(id); setScreen('logs'); }}
+          onCancel={cancelRun}
+        />
+      )}
       {tab === 'yaml' && <YamlTab job={job} />}
     </div>
   );
@@ -221,7 +236,7 @@ function OverviewTab({
               <span className="chip">user=taskflow</span>
             </div>
             <div>
-              <span className="chip">cwd=/storage/runtime</span>
+              <span className="chip">cwd</span>
             </div>
             <div>
               <span className="chip warn">no-root</span>
@@ -239,7 +254,15 @@ function OverviewTab({
   );
 }
 
-function RunsTab({ runs, onOpen }: { runs: Run[]; onOpen: (id: number) => void }) {
+function RunsTab({
+  runs,
+  onOpen,
+  onCancel,
+}: {
+  runs: Run[];
+  onOpen: (id: number) => void;
+  onCancel: (id: number) => void;
+}) {
   const t = useT();
   if (runs.length === 0) {
     return <div style={{ padding: 20 }} className="mono-s dim">{t.no_runs_for_job}</div>;
@@ -289,7 +312,21 @@ function RunsTab({ runs, onOpen }: { runs: Run[]; onOpen: (id: number) => void }
             <td className="mono-s">
               {r.failed_step ? <span style={{ color: 'var(--err)' }}>{r.failed_step}</span> : '—'}
             </td>
-            <td className="mono-s dim">→</td>
+            <td className="mono-s dim">
+              {r.status === 'RUNNING' ? (
+                <button
+                  className="btn danger sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancel(r.id);
+                  }}
+                >
+                  {t.btn_stop}
+                </button>
+              ) : (
+                '→'
+              )}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -348,6 +385,13 @@ export function YamlRender({ job }: { job: Job }) {
       {job.steps.map((st) => (
         <div key={st.id}>
           {ln(<>  - <span className="y-key">id</span>: {st.id}</>)}
+          {st.cwd &&
+            ln(
+              <>
+                {'    '}
+                <span className="y-key">cwd</span>: <span className="y-str">"{st.cwd}"</span>
+              </>
+            )}
           {ln(
             <>
               {'    '}
@@ -366,6 +410,34 @@ export function YamlRender({ job }: { job: Job }) {
               <>
                 {'    '}
                 <span className="y-key">depends_on</span>: [{(st.deps || []).join(', ')}]
+              </>
+            )}
+          {(st.success_contains || []).length > 0 &&
+            ln(
+              <>
+                {'    '}
+                <span className="y-key">success_contains</span>: [
+                {(st.success_contains || []).map((p, i) => (
+                  <span key={i}>
+                    <span className="y-str">"{p}"</span>
+                    {i < (st.success_contains || []).length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+                ]
+              </>
+            )}
+          {(st.failure_contains || []).length > 0 &&
+            ln(
+              <>
+                {'    '}
+                <span className="y-key">failure_contains</span>: [
+                {(st.failure_contains || []).map((p, i) => (
+                  <span key={i}>
+                    <span className="y-str">"{p}"</span>
+                    {i < (st.failure_contains || []).length - 1 ? ', ' : ''}
+                  </span>
+                ))}
+                ]
               </>
             )}
           {ln(

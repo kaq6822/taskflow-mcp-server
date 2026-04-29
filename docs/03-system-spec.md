@@ -155,8 +155,10 @@ Job 자체의 FAILED/TIMEOUT은 HTTP 에러가 아닌 **응답 body의 `status`*
 
 ### 4.3 Worker 정책 (enforced)
 
-- `shell=False`, `user=<전용 저권한>`, 고정 `cwd`, `no-root`.
+- `shell=False`, `user=<전용 저권한>`, 제어된 `cwd`(`TASKFLOW_STEP_CWD` 기본 + Step별 `cwd`), `no-root`.
 - Allowlist 기반 argv 실행. 미등록 명령어는 `policy.violation` + DENY.
+- `cd`, `pushd`, `popd` 같은 shell/process 상태 변경 명령은 거부. 작업 디렉토리는 Step `cwd`로 지정.
+- Step 출력 assertion(`success_contains`, `failure_contains`)은 stdout/stderr 스트림을 라인 단위로 관찰해 최종 Step 상태에 반영.
 - 네트워크: egress 정책으로 제한된 도메인만 허용.
 
 ### 4.4 감사 무결성

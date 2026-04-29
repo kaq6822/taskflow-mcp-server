@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 
 import { ApiError, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
@@ -192,6 +193,7 @@ function validateDraft(
   isExisting: boolean
 ): ValidationResult {
   const errs: string[] = [];
+  const stateCommands = new Set(['cd', 'pushd', 'popd']);
   if (!isExisting && !/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
   if (!d.name) errs.push(t.err_name_required);
   const ids = new Set<string>();
@@ -201,6 +203,15 @@ function validateDraft(
     ids.add(s.id);
     if (!Array.isArray(s.cmd) || s.cmd.length === 0 || s.cmd.some((c) => typeof c !== 'string'))
       errs.push(`${s.id}: cmd must be argv array`);
+    const head = typeof s.cmd[0] === 'string' ? s.cmd[0].split('/').filter(Boolean).at(-1) : undefined;
+    if (head && stateCommands.has(head)) errs.push(t.err_state_command(head));
+    if (s.cwd !== undefined && s.cwd !== null && !s.cwd.trim()) errs.push(`${s.id}: cwd must be non-empty`);
+    for (const field of ['success_contains', 'failure_contains'] as const) {
+      const patterns = s[field] || [];
+      if (!Array.isArray(patterns) || patterns.some((p) => typeof p !== 'string' || !p)) {
+        errs.push(`${s.id}: ${field} must be non-empty strings`);
+      }
+    }
   }
   for (const s of d.steps) {
     for (const dep of s.deps || []) {
@@ -246,6 +257,105 @@ function validateDraft(
   }
 
   return { ok: errs.length === 0, errors: errs };
+}
+
+function FieldLabel({
+  children,
+  help,
+  required = false,
+}: {
+  children: ReactNode;
+  help: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="field-label">
+      <span>
+        {children}
+        {required && <span className="req" aria-label="required">*</span>}
+      </span>
+      <HelpTooltip content={help} />
+    </label>
+  );
+}
+
+type TooltipPosition = {
+  left: number;
+  top: number;
+  width: number;
+  placement: 'top' | 'bottom';
+};
+
+function HelpTooltip({ content }: { content: string }) {
+  const anchorRef = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<TooltipPosition | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const anchor = anchorRef.current;
+      if (!anchor) return;
+
+      const rect = anchor.getBoundingClientRect();
+      const margin = 12;
+      const width = Math.max(180, Math.min(280, window.innerWidth - margin * 2));
+      const minLeft = margin + width / 2;
+      const maxLeft = window.innerWidth - margin - width / 2;
+      const center = rect.left + rect.width / 2;
+      const left = Math.min(Math.max(center, minLeft), maxLeft);
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const placement = spaceBelow < 150 && rect.top > spaceBelow ? 'top' : 'bottom';
+      const top = placement === 'bottom' ? rect.bottom + 8 : rect.top - 8;
+
+      setPosition({ left, top, width, placement });
+    };
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open, content]);
+
+  const tooltip =
+    open && position && typeof document !== 'undefined'
+      ? createPortal(
+          <div
+            className={`field-tooltip ${position.placement}`}
+            role="tooltip"
+            style={{
+              left: position.left,
+              top: position.top,
+              width: position.width,
+            }}
+          >
+            {content}
+          </div>,
+          document.body
+        )
+      : null;
+
+  return (
+    <>
+      <span
+        ref={anchorRef}
+        className="field-help"
+        tabIndex={0}
+        aria-label={content}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+      >
+        ?
+      </span>
+      {tooltip}
+    </>
+  );
 }
 
 function CanvasView({
@@ -343,15 +453,21 @@ function Inspector({
   };
   const [cmdText, setCmdText] = useState(JSON.stringify(step.cmd));
   useEffect(() => setCmdText(JSON.stringify(step.cmd)), [step.id, step.cmd.join('\u0001')]);
+  const listText = (items: string[] | undefined) => (items || []).join('\n');
+  const parseList = (value: string) =>
+    value
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   return (
     <div>
       <div className="ctitle">Inspector · {step.id}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">
-            ID <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_step_id} required>
+            ID
+          </FieldLabel>
           <input
             className="input mono sm"
             value={step.id}
@@ -371,9 +487,9 @@ function Inspector({
           />
         </div>
         <div>
-          <label className="mono-s dim">
-            Command (argv — shell=False) <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_step_cmd} required>
+            Command (argv — shell=False)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={cmdText}
@@ -390,7 +506,7 @@ function Inspector({
         </div>
         <div className="split s2" style={{ gap: 8 }}>
           <div>
-            <label className="mono-s dim">Timeout (s)</label>
+            <FieldLabel help={t.help_step_timeout}>Timeout (s)</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -399,7 +515,7 @@ function Inspector({
             />
           </div>
           <div>
-            <label className="mono-s dim">On failure</label>
+            <FieldLabel help={t.help_step_on_failure}>On failure</FieldLabel>
             <select
               className="select"
               style={{ fontSize: 11 }}
@@ -414,7 +530,40 @@ function Inspector({
           </div>
         </div>
         <div>
-          <label className="mono-s dim">Depends on (comma-separated step ids)</label>
+          <FieldLabel help={t.help_step_cwd}>Working directory (cwd)</FieldLabel>
+          <input
+            className="input mono sm"
+            value={step.cwd || ''}
+            placeholder="default: TASKFLOW_STEP_CWD"
+            onChange={(e) => patch({ cwd: e.target.value || null })}
+          />
+        </div>
+        <div>
+          <FieldLabel help={t.help_step_success_contains}>
+            Success output contains (one per line)
+          </FieldLabel>
+          <textarea
+            className="input mono sm"
+            style={{ minHeight: 54, resize: 'vertical' }}
+            value={listText(step.success_contains)}
+            placeholder="Deploy complete"
+            onChange={(e) => patch({ success_contains: parseList(e.target.value) })}
+          />
+        </div>
+        <div>
+          <FieldLabel help={t.help_step_failure_contains}>
+            Failure output contains (one per line)
+          </FieldLabel>
+          <textarea
+            className="input mono sm"
+            style={{ minHeight: 54, resize: 'vertical' }}
+            value={listText(step.failure_contains)}
+            placeholder="ERROR"
+            onChange={(e) => patch({ failure_contains: parseList(e.target.value) })}
+          />
+        </div>
+        <div>
+          <FieldLabel help={t.help_step_deps}>Depends on (comma-separated step ids)</FieldLabel>
           <input
             className="input mono sm"
             value={(step.deps || []).join(',')}
@@ -453,9 +602,9 @@ function MetaEditor({
       <div className="ctitle">{t.job_meta}</div>
       <div className="col" style={{ gap: 8 }}>
         <div>
-          <label className="mono-s dim">
-            ID (kebab-case) <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_job_id} required>
+            ID (kebab-case)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={draft.id}
@@ -470,9 +619,9 @@ function MetaEditor({
           )}
         </div>
         <div>
-          <label className="mono-s dim">
-            Name <span className="req" aria-label="required">*</span>
-          </label>
+          <FieldLabel help={t.help_job_name} required>
+            Name
+          </FieldLabel>
           <input
             className="input sm"
             value={draft.name}
@@ -480,7 +629,7 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Owner</label>
+          <FieldLabel help={t.help_job_owner}>Owner</FieldLabel>
           <input
             className="input sm"
             value={draft.owner}
@@ -488,7 +637,7 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Schedule</label>
+          <FieldLabel help={t.help_job_schedule}>Schedule</FieldLabel>
           <input
             className="input mono sm"
             value={draft.schedule}
@@ -497,7 +646,7 @@ function MetaEditor({
         </div>
         <div className="split s2" style={{ gap: 8 }}>
           <div>
-            <label className="mono-s dim">Timeout (s)</label>
+            <FieldLabel help={t.help_job_timeout}>Timeout (s)</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -506,7 +655,7 @@ function MetaEditor({
             />
           </div>
           <div>
-            <label className="mono-s dim">Concurrency</label>
+            <FieldLabel help={t.help_job_concurrency}>Concurrency</FieldLabel>
             <input
               className="input mono sm"
               type="number"
@@ -521,7 +670,7 @@ function MetaEditor({
           {t.job_concurrency_locked_hint}
         </div>
         <div>
-          <label className="mono-s dim">On failure</label>
+          <FieldLabel help={t.help_job_on_failure}>On failure</FieldLabel>
           <select
             className="select"
             style={{ fontSize: 11 }}
@@ -535,7 +684,7 @@ function MetaEditor({
           </select>
         </div>
         <div>
-          <label className="mono-s dim">Tags (comma)</label>
+          <FieldLabel help={t.help_job_tags}>Tags (comma)</FieldLabel>
           <input
             className="input mono sm"
             value={draft.tags.join(',')}
@@ -545,7 +694,9 @@ function MetaEditor({
           />
         </div>
         <div>
-          <label className="mono-s dim">Consumes artifact (name, optional)</label>
+          <FieldLabel help={t.help_job_consumes_artifact}>
+            Consumes artifact (name, optional)
+          </FieldLabel>
           <input
             className="input mono sm"
             value={draft.consumes_artifact || ''}
