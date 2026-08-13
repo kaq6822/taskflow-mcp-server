@@ -58,7 +58,7 @@ Agent는 제품의 1등 사용자지만, **어떤 Agent도 기본적으로 신�
 
 - 빌드 산출물(`.tar.gz`/`.jar`/`.zip`/`.ipa`)이 업로드 대상.
 - 업로드된 아티팩트는 **읽기 전용 · 해시 검증 · 스캔 통과 후에만 소비 가능**.
-- Step은 환경변수 `$ARTIFACT` 참조(`uploads://<name>@<ver|latest>`)로만 아티팩트 접근.
+- Step은 환경변수 `ARTIFACT_<ALIAS>_PATH`로만 아티팩트 접근. Job이 선언한 alias별로 주입되며, 경로는 Run 시작 시 `uploads://<name>@<ver|latest>`를 해석해 고정한 값이다.
 
 > 설정 파일 주입, 입력 CSV 등 범용 업로드는 본 제품의 scope가 아니다. 외부 스토리지 + `params`로 처리.
 

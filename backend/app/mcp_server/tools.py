@@ -14,7 +14,11 @@ from app.engine.log_bus import log_bus
 from app.engine.run_engine import get_engine
 from app.mcp_server.auth import auth_from_context, ip_from_context
 from app.models import Artifact, Job, Run, RunStep
-from app.services.artifacts import ArtifactValidationError, save_upload_bytes
+from app.services.artifacts import (
+    ArtifactResolutionError,
+    ArtifactValidationError,
+    save_upload_bytes,
+)
 from app.services.audit import append_event
 from app.services.keys import scope_allows
 
@@ -58,7 +62,7 @@ def _job_to_dict(job: Job) -> dict:
         "timeout": job.timeout,
         "concurrency": job.concurrency,
         "on_failure": job.on_failure,
-        "consumes_artifact": job.consumes_artifact,
+        "consumes_artifacts": job.consumes_artifacts,
         "steps": job.steps,
     }
 
@@ -71,7 +75,7 @@ def _run_to_dict(run: Run, steps: list[RunStep]) -> dict:
         "started_at": run.started_at.isoformat(),
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "duration_sec": run.duration_sec,
-        "artifact_ref": run.artifact_ref,
+        "artifact_refs": run.artifact_refs,
         "steps": [
             {"id": s.step_id, "state": s.state, "elapsed_sec": s.elapsed_sec}
             for s in steps
@@ -238,11 +242,14 @@ def register_tools(mcp: FastMCP) -> None:
         job_id: str,
         ctx: Context,
         mode: str = "sync",
-        artifact_ref: str | None = None,
+        artifact_refs: dict[str, str] | None = None,
         idempotency_key: str | None = None,
     ) -> dict:
         """Trigger a run of `job_id`. modes: sync | async.
-        scope: run:<job_id> (or run:*)"""
+
+        `artifact_refs` maps a Job's declared aliases to `uploads://<name>@<version>`.
+        Omitted aliases resolve to `@latest`; the concrete versions are pinned
+        onto the run record. scope: run:<job_id> (or run:*)"""
         auth = await _require(ctx, f"run:{job_id}", target=job_id)
         engine = get_engine()
         async with SessionLocal() as s:
@@ -263,14 +270,26 @@ def register_tools(mcp: FastMCP) -> None:
                 raise RuntimeError(
                     f"CONFLICT: job {job_id} already running as #{engine.live_run_for(job_id)}"
                 )
-            run = await engine.start(
-                s,
-                job=job,
-                trigger="mcp",
-                actor=auth.label,
-                artifact_ref=artifact_ref,
-                idempotency_key=idempotency_key,
-            )
+            try:
+                run = await engine.start(
+                    s,
+                    job=job,
+                    trigger="mcp",
+                    actor=auth.label,
+                    artifact_refs=artifact_refs,
+                    idempotency_key=idempotency_key,
+                )
+            except ArtifactResolutionError as e:
+                await append_event(
+                    s,
+                    who=auth.label,
+                    kind="mcp.run",
+                    target=job_id,
+                    src="mcp",
+                    ip=ip_from_context(ctx),
+                    result="DENY",
+                )
+                raise RuntimeError(str(e)) from e
             await append_event(
                 s,
                 who=auth.label,

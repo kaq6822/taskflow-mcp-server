@@ -225,13 +225,18 @@ function OverviewTab({
             <div className="v">{job.concurrency}</div>
             <div className="k">On failure</div>
             <div className="v">{job.on_failure}</div>
-            {job.consumes_artifact && (
+            {(job.consumes_artifacts?.length ?? 0) > 0 && (
               <>
-                <div className="k">Artifact</div>
+                <div className="k">Artifacts</div>
                 <div className="v">
-                  <span className="link" onClick={() => setScreen('artifacts')}>
-                    uploads://{job.consumes_artifact}@latest
-                  </span>
+                  {job.consumes_artifacts.map((c) => (
+                    <div key={c.alias}>
+                      <span className="link" onClick={() => setScreen('artifacts')}>
+                        uploads://{c.name}@latest
+                      </span>
+                      <span className="dim"> → ARTIFACT_{c.alias.toUpperCase()}_*</span>
+                    </div>
+                  ))}
                 </div>
               </>
             )}

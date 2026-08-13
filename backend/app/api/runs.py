@@ -13,9 +13,19 @@ from app.db import get_session
 from app.engine.run_engine import get_engine
 from app.models import Job, Run
 from app.schemas import RunCreate, RunOut
+from app.services.artifacts import ArtifactResolutionError
 from app.services.audit import append_event
 
 router = APIRouter(prefix="/api", tags=["runs"])
+
+# docs/03-system-spec.md §123 error vocabulary → HTTP status.
+_ARTIFACT_ERROR_STATUS = {
+    "NOT_FOUND": 404,
+    "NOT_READY": 409,
+    "INVALID_ARTIFACT": 400,
+    "UNKNOWN_ALIAS": 400,
+    "MISMATCH": 400,
+}
 
 
 @router.get("/runs", response_model=list[RunOut])
@@ -110,14 +120,29 @@ async def start_run(
         raise HTTPException(409, detail={"error": "CONFLICT", "current_run_id": live})
 
     actor = body.actor or request.headers.get("X-Actor", "admin")
-    run = await engine.start(
-        session,
-        job=job,
-        trigger=body.trigger,
-        actor=actor,
-        artifact_ref=body.artifact_ref,
-        idempotency_key=body.idempotency_key,
-    )
+    try:
+        run = await engine.start(
+            session,
+            job=job,
+            trigger=body.trigger,
+            actor=actor,
+            artifact_refs=body.artifact_refs,
+            idempotency_key=body.idempotency_key,
+        )
+    except ArtifactResolutionError as e:
+        await append_event(
+            session,
+            who=actor,
+            kind="job.run",
+            target=job_id,
+            src="mcp" if body.trigger == "mcp" else "web",
+            ip=request.client.host if request.client else "",
+            result="DENY",
+        )
+        raise HTTPException(
+            _ARTIFACT_ERROR_STATUS.get(e.code, 400),
+            detail={"error": e.code, "message": e.message},
+        )
     await append_event(
         session,
         who=actor,

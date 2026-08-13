@@ -20,6 +20,12 @@ from app.engine.policies import (
 )
 from app.engine.worker import OutputAssertions, WorkerResult, execute_argv
 from app.models import Job, Run, RunStep, utcnow
+from app.services.artifacts import (
+    ArtifactResolutionError,
+    artifact_env,
+    make_reference,
+    resolve_reference,
+)
 from app.services.audit import append_event
 
 
@@ -58,6 +64,38 @@ class RunEngine:
         async with SessionLocal() as s:
             return (await s.get(Run, run_id)) is not None
 
+    @staticmethod
+    async def _pin_artifacts(
+        session: AsyncSession, job: Job, requested: dict[str, str]
+    ) -> dict[str, dict]:
+        """Resolve every artifact the Job declares, pinning concrete versions.
+
+        Aliases the caller omits default to `@latest`. Resolution happens once,
+        here, so all steps of the run observe the same versions even if a new
+        upload moves the `latest` pointer mid-run.
+        """
+        declared = {e["alias"]: e["name"] for e in (job.consumes_artifacts or [])}
+        unknown = sorted(set(requested) - set(declared))
+        if unknown:
+            raise ArtifactResolutionError(
+                "UNKNOWN_ALIAS",
+                f"job {job.id} does not declare alias(es): {', '.join(unknown)}",
+            )
+        pinned: dict[str, dict] = {}
+        for alias, name in declared.items():
+            ref = requested.get(alias) or make_reference(name, "latest")
+            art = await resolve_reference(session, ref)
+            if art.name != name:
+                raise ArtifactResolutionError(
+                    "MISMATCH",
+                    f"alias {alias!r} consumes {name!r} but reference points at {art.name!r}",
+                )
+            pinned[alias] = {
+                "ref": make_reference(art.name, art.version),
+                "sha256": art.sha256,
+            }
+        return pinned
+
     async def start(
         self,
         session: AsyncSession,
@@ -65,12 +103,13 @@ class RunEngine:
         job: Job,
         trigger: str,
         actor: str,
-        artifact_ref: str | None = None,
+        artifact_refs: dict[str, str] | None = None,
         idempotency_key: str | None = None,
     ) -> Run:
         lock = self._locks.setdefault(job.id, asyncio.Lock())
         if lock.locked():
             raise RuntimeError("job busy")
+        pinned = await self._pin_artifacts(session, job, artifact_refs or {})
         order = topo_sort(job.steps)
         run = Run(
             job_id=job.id,
@@ -78,7 +117,7 @@ class RunEngine:
             trigger=trigger,
             actor=actor,
             order=order,
-            artifact_ref=artifact_ref,
+            artifact_refs=pinned,
             idempotency_key=idempotency_key,
         )
         session.add(run)
@@ -197,11 +236,40 @@ class RunEngine:
             actor: str = run.actor
             trigger: str = run.trigger
             started_at = run.started_at
+            pinned: dict[str, dict] = dict(run.artifact_refs or {})
+            # Versions were already pinned at trigger time; this only turns them
+            # into the env vars every step sees. A failure here means the row
+            # disappeared between trigger and launch, which must not leave the
+            # run stuck in RUNNING.
+            artifact_vars: dict[str, str] = {}
+            resolution_error: str | None = None
+            try:
+                for alias, meta in pinned.items():
+                    art = await resolve_reference(session, meta["ref"])
+                    artifact_vars.update(artifact_env(alias, art))
+            except ArtifactResolutionError as e:
+                resolution_error = str(e)
             log_bus.publish(
                 run_id,
                 "run.started",
-                {"run_id": run_id, "job_id": job_id, "at": started_at.isoformat()},
+                {
+                    "run_id": run_id,
+                    "job_id": job_id,
+                    "at": started_at.isoformat(),
+                    "artifacts": {a: m["ref"] for a, m in pinned.items()},
+                },
             )
+
+        if resolution_error is not None:
+            await self._fail_run_early(
+                job_id=job_id,
+                run_id=run_id,
+                message=resolution_error,
+                actor=actor,
+                trigger=trigger,
+                started_at=started_at,
+            )
+            return
 
         # Phase B — each step owns its own short transactions. Subprocess I/O
         # happens entirely outside any DB session.
@@ -238,6 +306,7 @@ class RunEngine:
                 step_spec=step_spec,
                 actor=actor,
                 trigger=trigger,
+                artifact_vars=artifact_vars,
             )
             if result.state in ("FAILED", "TIMEOUT"):
                 failed_step = sid
@@ -261,6 +330,7 @@ class RunEngine:
                         step_spec=step_spec,
                         actor=actor,
                         trigger=trigger,
+                        artifact_vars=artifact_vars,
                     )
                     if retry.state in ("FAILED", "TIMEOUT"):
                         failed = True
@@ -329,6 +399,50 @@ class RunEngine:
             },
         )
 
+    async def _fail_run_early(
+        self,
+        *,
+        job_id: str,
+        run_id: int,
+        message: str,
+        actor: str,
+        trigger: str,
+        started_at: datetime,
+    ) -> None:
+        """Finalize a run that cannot start — no step has executed yet."""
+        async with SessionLocal() as session:
+            run = await session.get(Run, run_id)
+            if run is None:
+                return
+            run.status = "FAILED"
+            run.err_message = message
+            run.finished_at = utcnow()
+            run.duration_sec = (run.finished_at - started_at).total_seconds()
+            duration = run.duration_sec
+            for rs in (
+                await session.execute(select(RunStep).where(RunStep.run_id == run_id))
+            ).scalars().all():
+                rs.state = "SKIPPED"
+            await append_event(
+                session,
+                who=actor,
+                kind="job.run.fail",
+                target=f"{job_id} #{run_id}",
+                src="mcp" if trigger == "mcp" else "web",
+                result="FAIL",
+            )
+        log_bus.publish(
+            run_id,
+            "run.finished",
+            {
+                "run_id": run_id,
+                "status": "FAILED",
+                "failed_step": None,
+                "err_message": message,
+                "duration_sec": duration,
+            },
+        )
+
     async def _finalize_cancelled(self, job_id: str, run_id: int) -> None:
         """Finalize a run that was cancelled mid-step. Opens a fresh session
         because the loop body's session was aborted by the cancellation."""
@@ -369,6 +483,7 @@ class RunEngine:
         step_spec: dict,
         actor: str,
         trigger: str,
+        artifact_vars: dict[str, str] | None = None,
     ) -> WorkerResult:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
@@ -416,6 +531,18 @@ class RunEngine:
                 "text": f"cwd={step_cwd} · timeout={timeout}s · shell=False",
             },
         )
+        if artifact_vars:
+            refs = sorted(v for k, v in artifact_vars.items() if k.endswith("_REF"))
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "dim",
+                    "text": "artifacts · " + " · ".join(refs),
+                },
+            )
         if assertions.success_contains or assertions.failure_contains:
             parts = []
             if assertions.success_contains:
@@ -490,6 +617,23 @@ class RunEngine:
         # secret names still get masked in logs.
         base_env = dict(os.environ)
         base_env.update(step_spec.get("env", {}))
+        # ARTIFACT_* is applied last on purpose: these values are the pinned
+        # resolution recorded on the Run, and letting a step override them
+        # would let the log claim one version while another was deployed.
+        if artifact_vars:
+            clobbered = sorted(set(step_spec.get("env", {})) & set(artifact_vars))
+            if clobbered:
+                log_bus.publish(
+                    run_id,
+                    "step.log",
+                    {
+                        "step_id": sid,
+                        "ts": _ts(),
+                        "lvl": "warn",
+                        "text": f"step env ignored for reserved keys: {', '.join(clobbered)}",
+                    },
+                )
+            base_env.update(artifact_vars)
         env, masked = filter_env(base_env)
         if masked:
             log_bus.publish(

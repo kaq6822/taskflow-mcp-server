@@ -73,7 +73,7 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
 | `subscribe_run(run_id)` | `read:runs` | stream | step 이벤트 수신 |
 | `upload_artifact(name, version, file, {ext?, metadata?})` | `write:uploads` | sync | 배포 아티팩트 업로드 |
 | `get_artifact(name, version)` | `read:jobs` | sync | 아티팩트 상태(READY/SCANNING) 조회 |
-| `run_job(job_id, {mode, artifact_ref?, params?, idempotency_key?})` | `run:<job_id>` | sync / async / stream | Job 실행 — 모드별 동작은 `02 §10.3` |
+| `run_job(job_id, {mode, artifact_refs?, params?, idempotency_key?})` | `run:<job_id>` | sync / async / stream | Job 실행 — 모드별 동작은 `02 §10.3` |
 | `cancel_run(run_id)` | `run:<job_id>` | sync | 진행 중 Run 취소 |
 
 ### 2.2 실행 대기 계약 (run_job 모드별)
@@ -95,7 +95,9 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
   "started_at": "ISO-8601",
   "finished_at": "ISO-8601 | null",
   "duration_sec": 252,
-  "artifact_ref": "uploads://web-dist@v1.24.3",
+  "artifact_refs": {
+    "dist": { "ref": "uploads://web-dist@v1.24.3", "sha256": "a9f3…" }
+  },
   "steps": [
     { "id": "pull", "state": "SUCCESS", "elapsed_sec": 2.1 }
   ],
@@ -120,7 +122,10 @@ event: run.finished    data: { status, failed_step?, err_message?, duration_sec 
 
 | HTTP | 의미 | 상황 |
 |---|---|---|
-| 400 `INVALID_ARTIFACT` | 해시/형식 불일치 | artifact_ref 검증 실패 |
+| 400 `INVALID_ARTIFACT` | 참조 형식 불일치 | `uploads://<name>@<ver>` 파싱 실패 |
+| 400 `UNKNOWN_ALIAS` | Job이 선언하지 않은 alias | `artifact_refs` 키가 `consumesArtifacts`에 없음 |
+| 400 `MISMATCH` | alias와 다른 아티팩트 | 참조가 선언된 name과 다른 아티팩트를 가리킴 |
+| 409 `NOT_READY` | 스캔 미완료 | 아티팩트 `status != READY` |
 | 401 `UNAUTH` | Bearer 누락/유효하지 않은 key | Key 검증 실패 |
 | 403 `DENY` | scope 미매칭 | `run:<job_id>` 없음 |
 | 404 `NOT_FOUND` | job/run/artifact 없음 | |

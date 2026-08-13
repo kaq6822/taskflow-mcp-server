@@ -130,7 +130,7 @@ At the same time, `mcp.run` (src=mcp) and `job.run.done` events are recorded in 
 | `subscribe_run(run_id, {tail?})` | `read:runs` | Recent log_bus event snapshot |
 | `upload_artifact(name, version, content_base64, {ext?})` | `write:uploads` | Upload artifact (base64 encoded) |
 | `get_artifact(name, version)` | `read:jobs` | Artifact status |
-| `run_job(job_id, {mode, artifact_ref?, idempotency_key?})` | `run:<job_id>` | Trigger a run. `mode`: `sync` / `async` |
+| `run_job(job_id, {mode, artifact_refs?, idempotency_key?})` | `run:<job_id>` | Trigger a run. `mode`: `sync` / `async`. `artifact_refs` is `{alias: "uploads://<name>@<ver\|latest>"}`; omitted aliases resolve to `@latest` and are pinned to the concrete version |
 | `cancel_run(run_id)` | `run:<job_id>` | Cancel a running run |
 
 ## 5. Run Modes

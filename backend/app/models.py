@@ -29,7 +29,9 @@ class Job(Base):
     timeout: Mapped[int] = mapped_column(Integer, default=600)
     concurrency: Mapped[int] = mapped_column(Integer, default=1)
     on_failure: Mapped[str] = mapped_column(String(20), default="STOP")
-    consumes_artifact: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # [{"alias": "jar", "name": "myapp"}, …] — alias is the env-var fragment
+    # each step sees as ARTIFACT_<ALIAS>_PATH.
+    consumes_artifacts: Mapped[list[dict]] = mapped_column(JSON, default=list)
     steps: Mapped[list[dict]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -51,7 +53,10 @@ class Run(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     duration_sec: Mapped[float] = mapped_column(default=0.0)
     order: Mapped[list[str]] = mapped_column(JSON, default=list)
-    artifact_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # {"jar": {"ref": "uploads://myapp@v1.2.4", "sha256": "a9f3…"}, …}
+    # Pinned at run start: `@latest` is resolved once and the concrete version
+    # recorded, so an audit months later can still tell what was deployed.
+    artifact_refs: Mapped[dict] = mapped_column(JSON, default=dict)
     failed_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     err_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
