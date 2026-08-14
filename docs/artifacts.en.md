@@ -264,6 +264,7 @@ No limit, as long as the aliases differ.
 
 ## Related
 
+- [Artifact Jobs](./artifact-jobs.en.md) — How to actually author Jobs that use artifacts (recipes, anti-patterns)
 - [Getting Started](./getting-started.en.md) — Installation and your first Job
 - [REST API](./rest-api.en.md) — Full endpoint list
 - [MCP API](./mcp-api.en.md) — Agent tools and scopes

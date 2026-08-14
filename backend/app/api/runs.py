@@ -109,7 +109,11 @@ async def start_run(
     # idempotency
     if body.idempotency_key:
         existing = (
-            await session.execute(select(Run).where(Run.idempotency_key == body.idempotency_key))
+            await session.execute(
+                select(Run)
+                .options(selectinload(Run.steps))  # P1-3: see list_runs
+                .where(Run.idempotency_key == body.idempotency_key)
+            )
         ).scalar_one_or_none()
         if existing:
             return existing

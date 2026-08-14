@@ -264,6 +264,7 @@ Job의 `consumes_artifacts`에 alias가 선언돼 있는지 확인한다. 업로
 
 ## 관련 문서
 
+- [Artifact Jobs](./artifact-jobs.md) — 아티팩트를 쓰는 Job을 실제로 어떻게 짜는지 (레시피·안티패턴)
 - [Getting Started](./getting-started.md) — 설치와 첫 Job 만들기
 - [REST API](./rest-api.md) — 엔드포인트 전체 목록
 - [MCP API](./mcp-api.md) — Agent 도구와 scope
