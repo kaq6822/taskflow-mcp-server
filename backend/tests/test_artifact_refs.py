@@ -5,7 +5,7 @@ import pytest
 
 from app.engine.run_engine import RunEngine
 from app.engine.worker import WorkerResult
-from app.models import Job
+from app.models import Job, utcnow
 from app.services.artifacts import (
     ArtifactResolutionError,
     ArtifactValidationError,
@@ -126,6 +126,76 @@ async def test_unknown_alias_is_rejected(session):
 
 
 @pytest.mark.asyncio
+async def test_alias_lookup_ignores_case(session):
+    """`validate_consumes` reserves aliases case-insensitively and the env vars
+    are upper-cased, so a caller may address `jar` as `JAR`."""
+    await _upload(session, "myapp", "v1.0.0")
+    await _upload(session, "myapp", "v2.0.0")
+    job = _job("deploy", [{"alias": "jar", "name": "myapp"}])
+    session.add(job)
+    await session.flush()
+
+    run = await RunEngine().start(
+        session,
+        job=job,
+        trigger="manual",
+        actor="test",
+        artifact_refs={"JAR": "uploads://myapp@v1.0.0"},
+    )
+    # Pinned under the declared spelling, so artifact_env keeps working.
+    assert run.artifact_refs["jar"]["ref"] == "uploads://myapp@v1.0.0"
+
+
+@pytest.mark.asyncio
+async def test_same_alias_in_two_casings_is_rejected(session):
+    await _upload(session, "myapp", "v1.0.0")
+    job = _job("deploy", [{"alias": "jar", "name": "myapp"}])
+    session.add(job)
+    await session.flush()
+
+    with pytest.raises(ArtifactResolutionError) as e:
+        await RunEngine().start(
+            session,
+            job=job,
+            trigger="manual",
+            actor="test",
+            artifact_refs={"jar": "uploads://myapp@v1.0.0", "JAR": "uploads://myapp@v1.0.0"},
+        )
+    assert e.value.code == "INVALID_ARTIFACT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ref", ["", "   ", None])
+async def test_blank_reference_does_not_fall_back_to_latest(session, ref):
+    """A falsy ref must fail loudly — silently shipping `@latest` would deploy a
+    version the caller never asked for."""
+    await _upload(session, "myapp", "v1.0.0")
+    job = _job("deploy", [{"alias": "jar", "name": "myapp"}])
+    session.add(job)
+    await session.flush()
+
+    with pytest.raises(ArtifactResolutionError) as e:
+        await RunEngine().start(
+            session, job=job, trigger="manual", actor="test", artifact_refs={"jar": ref}
+        )
+    assert e.value.code == "INVALID_ARTIFACT"
+
+
+@pytest.mark.asyncio
+async def test_latest_is_deterministic_when_two_rows_are_flagged(session):
+    """`latest` is a flag, not a unique constraint — concurrent uploads can leave
+    two rows set, and resolution must still pick the newest."""
+    await _upload(session, "myapp", "v1.0.0")
+    await _upload(session, "myapp", "v2.0.0")
+    stale = await resolve_reference(session, "uploads://myapp@v1.0.0")
+    stale.latest = True  # simulate the interleaved-upload race
+    await session.flush()
+
+    art = await resolve_reference(session, "uploads://myapp@latest")
+    assert art.version == "v2.0.0"
+
+
+@pytest.mark.asyncio
 async def test_alias_pointing_at_a_different_artifact_is_rejected(session):
     await _upload(session, "myapp", "v1.0.0")
     await _upload(session, "otherapp", "v1.0.0")
@@ -169,6 +239,33 @@ async def test_not_ready_artifact_is_rejected(session):
     with pytest.raises(ArtifactResolutionError) as e:
         await RunEngine().start(session, job=job, trigger="manual", actor="test")
     assert e.value.code == "NOT_READY"
+
+
+@pytest.mark.asyncio
+async def test_fail_run_early_closes_the_stream_when_the_row_is_gone(session):
+    """The vanished-row branch must still emit a terminal event, or
+    `/api/runs/{id}/stream` subscribers wait on pings forever."""
+    from app.engine.log_bus import log_bus
+
+    missing_run_id = 999_999
+    q = log_bus.subscribe(missing_run_id)
+    try:
+        await RunEngine()._fail_run_early(
+            job_id="deploy",
+            run_id=missing_run_id,
+            message="artifact ghost@latest not found",
+            actor="test",
+            trigger="manual",
+            started_at=utcnow(),
+        )
+        event = q.get_nowait()
+    finally:
+        log_bus.unsubscribe(missing_run_id, q)
+        log_bus.clear(missing_run_id)
+
+    assert event["event"] == "run.finished"
+    assert event["data"]["status"] == "FAILED"
+    assert event["data"]["err_message"] == "artifact ghost@latest not found"
 
 
 @pytest.mark.asyncio

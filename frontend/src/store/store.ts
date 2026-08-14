@@ -69,7 +69,15 @@ type State = {
  *  and "HTTP 404" alone would not tell the operator which artifact failed. */
 function describeError(e: unknown): string {
   if (e instanceof ApiError) {
-    const d = e.detail as { error?: string; message?: string } | string | undefined;
+    // ApiError.detail holds the whole parsed body, and FastAPI nests
+    // HTTPException(detail=…) one level deep as {"detail": …}. Unwrap that level
+    // before reading `error`, or the structured message is never seen.
+    const body = e.detail;
+    const d = (
+      body && typeof body === 'object' && 'detail' in body
+        ? (body as { detail: unknown }).detail
+        : body
+    ) as { error?: string; message?: string } | string | undefined;
     if (d && typeof d === 'object' && d.error) {
       return d.message ? `${d.error}: ${d.message}` : d.error;
     }

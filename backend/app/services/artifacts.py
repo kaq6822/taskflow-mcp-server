@@ -201,7 +201,14 @@ async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
     """
     name, version = parse_reference(ref)
     if version == "latest":
-        q = select(Artifact).where(Artifact.name == name, Artifact.latest)
+        # `latest` is a flag maintained by `_finalise`, not a unique constraint
+        # (only `(name, version)` is unique), so concurrent uploads can leave two
+        # rows flagged. Order explicitly rather than letting the DB pick.
+        q = (
+            select(Artifact)
+            .where(Artifact.name == name, Artifact.latest)
+            .order_by(Artifact.uploaded_at.desc(), Artifact.id.desc())
+        )
     else:
         q = select(Artifact).where(Artifact.name == name, Artifact.version == version)
     row = (await session.execute(q.limit(1))).scalar_one_or_none()

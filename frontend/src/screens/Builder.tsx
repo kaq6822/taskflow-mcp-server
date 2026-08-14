@@ -204,7 +204,10 @@ function validateDraft(
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(c.alias)) errs.push(t.err_alias_format(c.alias));
     else if (aliases.has(c.alias.toUpperCase())) errs.push(t.err_alias_dup(c.alias));
     aliases.add(c.alias.toUpperCase());
-    if (!/^[A-Za-z0-9._-]+$/.test(c.name)) errs.push(t.err_artifact_name_format(c.name));
+    // The alphabet alone would let `a..b` through, which _validate_component
+    // rejects with a separate `".." in value` check.
+    if (!/^[A-Za-z0-9._-]+$/.test(c.name) || c.name.includes('..'))
+      errs.push(t.err_artifact_name_format(c.name));
   }
 
   const ids = new Set<string>();

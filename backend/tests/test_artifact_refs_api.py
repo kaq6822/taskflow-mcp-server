@@ -85,6 +85,50 @@ async def test_create_job_rejects_alias_that_is_not_env_safe(session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["consumes_artifacts", "steps", "tags", "name"])
+async def test_patch_with_explicit_null_does_not_persist_null(session, field):
+    """No Job column is nullable, so an explicit `null` must be ignored rather
+    than written — a persisted NULL makes every later JobOut fail to serialize
+    and takes the whole jobs API down with it."""
+    session.add(Job(**_job_body([{"alias": "jar", "name": "myapp"}])))
+    await session.commit()
+
+    client = await _client(session)
+    try:
+        async with client:
+            res = await client.patch("/api/jobs/deploy-app", json={field: None})
+            listed = await client.get("/api/jobs")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert res.status_code == 200
+    assert getattr(await session.get(Job, "deploy-app"), field) is not None
+    # The follow-up read is the part that used to 500 forever.
+    assert listed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_run_with_blank_reference_returns_400(session):
+    await save_upload_bytes(
+        session=session, name="myapp", version="v1", ext="jar", uploader="t", data=b"x"
+    )
+    session.add(Job(**_job_body([{"alias": "jar", "name": "myapp"}])))
+    await session.commit()
+
+    client = await _client(session)
+    try:
+        async with client:
+            res = await client.post(
+                "/api/jobs/deploy-app/runs", json={"artifact_refs": {"jar": ""}}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert res.status_code == 400
+    assert res.json()["detail"]["error"] == "INVALID_ARTIFACT"
+
+
+@pytest.mark.asyncio
 async def test_run_with_missing_artifact_returns_404(session):
     session.add(Job(**_job_body([{"alias": "jar", "name": "ghost"}])))
     await session.commit()

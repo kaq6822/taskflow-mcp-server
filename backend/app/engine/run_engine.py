@@ -75,15 +75,43 @@ class RunEngine:
         upload moves the `latest` pointer mid-run.
         """
         declared = {e["alias"]: e["name"] for e in (job.consumes_artifacts or [])}
-        unknown = sorted(set(requested) - set(declared))
+        # `validate_consumes` reserves aliases case-insensitively and
+        # `artifact_env` upper-cases them into ARTIFACT_<ALIAS>_*, so a caller
+        # who saw `ARTIFACT_JAR_PATH` must be able to pass "JAR" for a `jar`
+        # declaration. Match the same rule here instead of exact-casing.
+        by_key = {alias.upper(): alias for alias in declared}
+        wanted: dict[str, str] = {}
+        unknown: list[str] = []
+        for alias, ref in requested.items():
+            target = by_key.get(alias.upper())
+            if target is None:
+                unknown.append(alias)
+                continue
+            if target in wanted:
+                raise ArtifactResolutionError(
+                    "INVALID_ARTIFACT",
+                    f"alias {target!r} was given more than once",
+                )
+            wanted[target] = ref
         if unknown:
             raise ArtifactResolutionError(
                 "UNKNOWN_ALIAS",
-                f"job {job.id} does not declare alias(es): {', '.join(unknown)}",
+                f"job {job.id} does not declare alias(es): {', '.join(sorted(unknown))}",
             )
         pinned: dict[str, dict] = {}
         for alias, name in declared.items():
-            ref = requested.get(alias) or make_reference(name, "latest")
+            # Key presence, not truthiness: an omitted alias legitimately
+            # defaults to `@latest`, but an explicitly-passed empty ref is an
+            # error — falling back would silently deploy a version the caller
+            # never asked for.
+            if alias not in wanted:
+                ref = make_reference(name, "latest")
+            else:
+                ref = wanted[alias]
+                if not isinstance(ref, str) or not ref.strip():
+                    raise ArtifactResolutionError(
+                        "INVALID_ARTIFACT", f"alias {alias!r} was given an empty reference"
+                    )
             art = await resolve_reference(session, ref)
             if art.name != name:
                 raise ArtifactResolutionError(
@@ -413,6 +441,20 @@ class RunEngine:
         async with SessionLocal() as session:
             run = await session.get(Run, run_id)
             if run is None:
+                # Still close the stream: `/api/runs/{id}/stream` subscribers
+                # only stop on a terminal event, and this is exactly the
+                # vanished-row case this method exists to handle.
+                log_bus.publish(
+                    run_id,
+                    "run.finished",
+                    {
+                        "run_id": run_id,
+                        "status": "FAILED",
+                        "failed_step": None,
+                        "err_message": message,
+                        "duration_sec": 0.0,
+                    },
+                )
                 return
             run.status = "FAILED"
             run.err_message = message

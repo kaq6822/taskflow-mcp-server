@@ -93,8 +93,12 @@ async def update_job(
     if not job:
         raise HTTPException(404, "job not found")
 
-    data = body.model_dump(exclude_unset=True)
-    if data.get("consumes_artifacts") is not None:
+    # Every JobUpdate field is Optional only to mark it "unset", but no Job
+    # column is nullable. An explicit `null` in the body must therefore be
+    # treated as "not provided": writing it through persists a NULL that makes
+    # every later JobOut serialization fail, bricking the jobs API.
+    data = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "consumes_artifacts" in data:
         try:
             validate_consumes(data["consumes_artifacts"])
         except ArtifactValidationError as e:

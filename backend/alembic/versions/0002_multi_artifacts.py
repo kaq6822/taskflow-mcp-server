@@ -5,7 +5,8 @@ Replaces the single `jobs.consumes_artifact` name with an aliased list, and
 
 Existing single-artifact rows are carried over under the alias `artifact`, so
 environments that already had a value keep working (their steps just read
-`ARTIFACT_ARTIFACT_PATH` unless the alias is renamed).
+`ARTIFACT_ARTIFACT_PATH` unless the alias is renamed). Names with no READY
+artifact behind them are dropped rather than migrated — see `upgrade`.
 
 Revision ID: 0002
 Revises: 0001
@@ -26,6 +27,17 @@ depends_on: Union[str, Sequence[str], None] = None
 _LEGACY_ALIAS = "artifact"
 
 
+def _as_json(raw: object, default: object) -> object:
+    """Read a JSON column that different drivers hand back differently.
+
+    SQLite returns the stored text, while Postgres deserializes `JSON`/`JSONB`
+    before it reaches `sa.text()` — `json.loads` on the latter raises TypeError.
+    """
+    if raw is None:
+        return default
+    return json.loads(raw) if isinstance(raw, str) else raw
+
+
 def upgrade() -> None:
     conn = op.get_bind()
 
@@ -38,14 +50,37 @@ def upgrade() -> None:
             sa.Column("artifact_refs", sa.JSON(), nullable=False, server_default="{}")
         )
 
+    # Before this revision `consumes_artifact` was inert: nothing resolved it and
+    # no run was gated on it. Now every declared entry is resolved at trigger
+    # time, so carrying over a name that has no READY artifact would turn a
+    # working Job into one that fails every single run. Migrate the resolvable
+    # ones and drop the rest — the operator can re-declare them once the
+    # artifact exists, which is far easier to notice than a run that 404s.
+    ready = {
+        row[0]
+        for row in conn.execute(
+            sa.text("SELECT DISTINCT name FROM artifacts WHERE status = 'READY'")
+        ).fetchall()
+    }
+    dropped: list[str] = []
     for job_id, legacy in conn.execute(
         sa.text("SELECT id, consumes_artifact FROM jobs WHERE consumes_artifact IS NOT NULL")
     ).fetchall():
-        if not (legacy or "").strip():
+        name = (legacy or "").strip()
+        if not name:
+            continue
+        if name not in ready:
+            dropped.append(f"{job_id}→{name}")
             continue
         conn.execute(
             sa.text("UPDATE jobs SET consumes_artifacts = :v WHERE id = :id"),
-            {"v": json.dumps([{"alias": _LEGACY_ALIAS, "name": legacy}]), "id": job_id},
+            {"v": json.dumps([{"alias": _LEGACY_ALIAS, "name": name}]), "id": job_id},
+        )
+    if dropped:
+        print(
+            f"[0002] dropped {len(dropped)} unresolvable consumes_artifact "
+            f"declaration(s); re-add them once the artifact is uploaded: "
+            f"{', '.join(dropped)}"
         )
 
     for run_id, legacy in conn.execute(
@@ -77,7 +112,7 @@ def downgrade() -> None:
     for job_id, raw in conn.execute(
         sa.text("SELECT id, consumes_artifacts FROM jobs")
     ).fetchall():
-        entries = json.loads(raw or "[]")
+        entries = _as_json(raw, [])
         if not entries:
             continue
         conn.execute(
@@ -86,7 +121,7 @@ def downgrade() -> None:
         )
 
     for run_id, raw in conn.execute(sa.text("SELECT id, artifact_refs FROM runs")).fetchall():
-        refs = json.loads(raw or "{}")
+        refs = _as_json(raw, {})
         if not refs:
             continue
         first = next(iter(refs.values()))
