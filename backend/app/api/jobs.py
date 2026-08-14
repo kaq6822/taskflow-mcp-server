@@ -10,6 +10,7 @@ from app.engine.policies import AllowlistError, check_allowlist, check_forbidden
 from app.engine.run_engine import get_engine
 from app.models import Job, Run
 from app.schemas import JobCreate, JobOut, JobUpdate
+from app.services.artifacts import ArtifactValidationError, validate_consumes
 from app.services.audit import append_event
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -36,12 +37,14 @@ async def create_job(
     if await session.get(Job, body.id):
         raise HTTPException(409, "job already exists")
     steps_raw = [s.model_dump() for s in body.steps]
+    consumes_raw = [c.model_dump() for c in body.consumes_artifacts]
     try:
+        validate_consumes(consumes_raw)
         validate_steps(steps_raw)
         for s in steps_raw:
             check_forbidden_state_command(s["cmd"])
             check_allowlist(s["cmd"])
-    except (DagValidationError, AllowlistError) as e:
+    except (DagValidationError, AllowlistError, ArtifactValidationError) as e:
         await append_event(
             session,
             who=_actor(request),
@@ -62,7 +65,7 @@ async def create_job(
         timeout=body.timeout,
         concurrency=body.concurrency,
         on_failure=body.on_failure,
-        consumes_artifact=body.consumes_artifact,
+        consumes_artifacts=consumes_raw,
         steps=steps_raw,
     )
     session.add(job)
@@ -90,7 +93,25 @@ async def update_job(
     if not job:
         raise HTTPException(404, "job not found")
 
-    data = body.model_dump(exclude_unset=True)
+    # Every JobUpdate field is Optional only to mark it "unset", but no Job
+    # column is nullable. An explicit `null` in the body must therefore be
+    # treated as "not provided": writing it through persists a NULL that makes
+    # every later JobOut serialization fail, bricking the jobs API.
+    data = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "consumes_artifacts" in data:
+        try:
+            validate_consumes(data["consumes_artifacts"])
+        except ArtifactValidationError as e:
+            await append_event(
+                session,
+                who=_actor(request),
+                kind="job.edit",
+                target=job_id,
+                src="web",
+                ip=_ip(request),
+                result="DENY",
+            )
+            raise HTTPException(400, str(e))
     if "steps" in data:
         steps_raw = [s.model_dump() if hasattr(s, "model_dump") else s for s in data["steps"]]
         try:

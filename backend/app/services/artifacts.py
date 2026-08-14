@@ -17,9 +17,32 @@ from app.models import Artifact
 # escape `storage/artifacts/` by supplying `name="../../etc/passwd"`.
 _SAFE_COMPONENT = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# Aliases become environment-variable name fragments (`ARTIFACT_<ALIAS>_PATH`),
+# so they are restricted far more tightly than artifact names: the artifact
+# name alphabet allows `.` and `-`, which would have to be folded to `_` and
+# would make `my-app` and `my.app` collide on the same env key. Requiring an
+# explicit alias sidesteps that entirely.
+_ALIAS = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+
+_REF_SCHEME = "uploads://"
+
 
 class ArtifactValidationError(ValueError):
     pass
+
+
+class ArtifactResolutionError(Exception):
+    """A `uploads://` reference could not be turned into a usable artifact.
+
+    `code` mirrors the error vocabulary in docs/03-system-spec.md §123 so the
+    REST and MCP layers can map to consistent statuses without re-parsing the
+    message.
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+        self.message = message
 
 
 def _validate_component(value: str, field: str) -> None:
@@ -123,20 +146,91 @@ async def _finalise(
     return art
 
 
-def resolve_reference(ref: str, session_artifacts: list[Artifact]) -> Artifact | None:
-    if not ref.startswith("uploads://"):
-        return None
-    body = ref[len("uploads://") :]
+def validate_alias(alias: str) -> None:
+    if not _ALIAS.match(alias or ""):
+        raise ArtifactValidationError(
+            f"invalid alias: {alias!r} (must start with a letter; letters, digits, underscore only)"
+        )
+
+
+def validate_consumes(entries: list[dict]) -> None:
+    """Validate a Job's `consumes_artifacts` list.
+
+    Each entry is `{"alias": ..., "name": ...}`. Aliases must be unique because
+    they map onto distinct environment-variable prefixes.
+    """
+    seen: set[str] = set()
+    for entry in entries:
+        alias = entry.get("alias", "")
+        name = entry.get("name", "")
+        validate_alias(alias)
+        _validate_component(name, "artifact name")
+        key = alias.upper()
+        if key in seen:
+            raise ArtifactValidationError(f"duplicate alias: {alias!r}")
+        seen.add(key)
+
+
+def parse_reference(ref: str) -> tuple[str, str]:
+    """Split `uploads://<name>@<version|latest>` into (name, version)."""
+    if not ref.startswith(_REF_SCHEME):
+        raise ArtifactResolutionError(
+            "INVALID_ARTIFACT", f"reference must start with {_REF_SCHEME!r}: {ref!r}"
+        )
+    body = ref[len(_REF_SCHEME) :]
     if "@" not in body:
-        return None
+        raise ArtifactResolutionError(
+            "INVALID_ARTIFACT", f"reference must be <name>@<version|latest>: {ref!r}"
+        )
     name, version = body.split("@", 1)
+    if not name or not version:
+        raise ArtifactResolutionError("INVALID_ARTIFACT", f"incomplete reference: {ref!r}")
+    return name, version
+
+
+def make_reference(name: str, version: str) -> str:
+    return f"{_REF_SCHEME}{name}@{version}"
+
+
+async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
+    """Resolve a `uploads://` reference to a READY artifact row.
+
+    `@latest` follows the mutable pointer maintained by `_finalise`. Callers
+    are expected to pin the concrete version afterwards (see
+    `make_reference`) so the run record stays reproducible.
+    """
+    name, version = parse_reference(ref)
     if version == "latest":
-        candidates = [a for a in session_artifacts if a.name == name and a.latest]
-        return candidates[0] if candidates else None
-    for a in session_artifacts:
-        if a.name == name and a.version == version:
-            return a
-    return None
+        # `latest` is a flag maintained by `_finalise`, not a unique constraint
+        # (only `(name, version)` is unique), so concurrent uploads can leave two
+        # rows flagged. Order explicitly rather than letting the DB pick.
+        q = (
+            select(Artifact)
+            .where(Artifact.name == name, Artifact.latest)
+            .order_by(Artifact.uploaded_at.desc(), Artifact.id.desc())
+        )
+    else:
+        q = select(Artifact).where(Artifact.name == name, Artifact.version == version)
+    row = (await session.execute(q.limit(1))).scalar_one_or_none()
+    if row is None:
+        raise ArtifactResolutionError("NOT_FOUND", f"artifact {name}@{version} not found")
+    if row.status != "READY":
+        raise ArtifactResolutionError(
+            "NOT_READY", f"artifact {name}@{row.version} is {row.status}"
+        )
+    return row
+
+
+def artifact_env(alias: str, art: Artifact) -> dict[str, str]:
+    """Environment variables handed to every step of a run consuming `art`."""
+    p = f"ARTIFACT_{alias.upper()}"
+    return {
+        f"{p}_PATH": art.blob_path,
+        f"{p}_NAME": art.name,
+        f"{p}_VERSION": art.version,
+        f"{p}_SHA256": art.sha256,
+        f"{p}_REF": make_reference(art.name, art.version),
+    }
 
 
 def ensure_storage_dirs() -> None:

@@ -126,9 +126,14 @@ PENDING → RUNNING → SUCCESS (exit 0)
 
 ### 5.3 Artifact 참조 규칙
 
-- Step은 환경변수 `$ARTIFACT`에 `uploads://<name>@<ver|latest>` 참조를 받는다.
-- 예: `aws s3 sync $ARTIFACT s3://prod-web/`
-- `uploads://web-dist@latest`는 항상 `latest=true`인 버전을 가리킴.
+- Job은 `consumesArtifacts`에 `{alias, name}` 목록을 선언한다. alias는 환경변수 이름의 일부가 되므로 `^[A-Za-z][A-Za-z0-9_]*$`로 제한하고, Job 안에서 중복될 수 없다. 아티팩트 이름은 `.`/`-`를 허용하므로 alias를 분리하지 않으면 `my-app`과 `my.app`이 같은 환경변수 키로 충돌한다.
+- Run 시작 시 alias마다 참조를 해석하고, Step은 다음 환경변수를 받는다.
+  - `ARTIFACT_<ALIAS>_PATH` — 해석된 blob 절대경로
+  - `ARTIFACT_<ALIAS>_NAME` · `_VERSION` · `_SHA256` · `_REF`
+- `shell=False`이므로 `cmd` argv에는 변수 치환이 일어나지 않는다. 아티팩트 경로를 쓰는 Step은 이 환경변수를 읽는 스크립트를 호출해야 한다.
+- 예: `deploy.sh` 내부에서 `install -m 0644 "$ARTIFACT_JAR_PATH" /opt/svc/app.jar`
+- `uploads://web-dist@latest`는 해석 시점에 `latest=true`인 버전을 가리킨다. 해석 결과는 구체 버전으로 Run에 고정(pin)되므로, Run 도중 새 업로드가 포인터를 옮겨도 그 Run의 모든 Step은 같은 버전을 본다.
+- `ARTIFACT_*` 키는 Step의 `env`로 덮어쓸 수 없다. 덮어쓰기를 시도하면 무시하고 경고를 로그에 남긴다 — 기록된 pin과 실제 배포본이 어긋나지 않게 하기 위함이다.
 
 ### 5.4 Artifact 검증 규칙
 
@@ -269,7 +274,7 @@ Developer                AI Agent              TaskFlow MCP             Worker
     │                        │                       │                     │
     │                        │── run_job ───────────▶│ (scope:run:<job-id>)│
     │                        │   (job_id, mode,      │                     │
-    │                        │    artifact_ref)      │                     │
+    │                        │    artifact_refs)     │                     │
     │                        │                       │── dispatch ────────▶│
     │                        │                       │                     │
     │                        │                       │◀── step logs ───────│
@@ -307,9 +312,9 @@ Developer                AI Agent              TaskFlow MCP             Worker
 #### Step 3: Job 실행
 
 - 필수 scope: `run:<job-id>` 또는 `run:*`.
-- 호출: `run_job(job_id, { mode, artifact_ref?, params?, actor? })`
+- 호출: `run_job(job_id, { mode, artifact_refs?, params?, actor? })`
   - `mode`: `'sync' | 'async' | 'stream'` (§10.3 참고).
-  - `artifact_ref`: 사용할 아티팩트의 `uploads://<name>@<ver|latest>` 참조 (Job의 `consumesArtifact`와 일치해야 함).
+  - `artifact_refs`: `{alias: 'uploads://<name>@<ver|latest>'}` 맵. 생략한 alias는 `@latest`로 해석된다. alias 키는 대소문자를 구분하지 않는다(`jar` 선언에 `JAR` 전달 가능). Job이 선언하지 않은 alias는 `UNKNOWN_ALIAS`, 참조가 다른 아티팩트를 가리키면 `MISMATCH`로 거부된다. 생략과 달리 **빈 참조를 명시적으로 전달하면** `@latest`로 대체하지 않고 `INVALID_ARTIFACT`로 거부한다.
   - `params`: Job 정의에서 허용된 key만 통과 (unknown key는 DENY).
 - scope 검증 실패 시 **DENY + audit `auth.fail`** — Run은 생성되지 않음.
 - 동시성 검사: 해당 Job에 `liveRun`이 있으면 거부(429 또는 409) + 기존 run_id 반환.
@@ -365,7 +370,9 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
   "started_at": "2026-04-20T10:12:03Z",
   "finished_at": "2026-04-20T10:16:15Z",
   "duration_sec": 252,
-  "artifact_ref": "uploads://web-dist@v1.24.3",
+  "artifact_refs": {
+    "dist": { "ref": "uploads://web-dist@v1.24.3", "sha256": "a9f3…" }
+  },
   "steps": [
     { "id": "pull",       "state": "SUCCESS", "elapsed_sec": 2.1 },
     { "id": "fetch-deps", "state": "SUCCESS", "elapsed_sec": 3.8 },

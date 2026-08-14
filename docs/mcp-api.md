@@ -130,7 +130,7 @@ curl -X POST http://localhost:7391/mcp \
 | `subscribe_run(run_id, {tail?})` | `read:runs` | log_bus 최근 이벤트 스냅샷 |
 | `upload_artifact(name, version, content_base64, {ext?})` | `write:uploads` | 아티팩트 업로드 (base64 인코딩) |
 | `get_artifact(name, version)` | `read:jobs` | 아티팩트 상태 |
-| `run_job(job_id, {mode, artifact_ref?, idempotency_key?})` | `run:<job_id>` | Run 트리거. `mode`: `sync` / `async` |
+| `run_job(job_id, {mode, artifact_refs?, idempotency_key?})` | `run:<job_id>` | Run 트리거. `mode`: `sync` / `async`. `artifact_refs`는 `{alias: "uploads://<name>@<ver\|latest>"}`, 생략한 alias는 `@latest`로 해석 후 구체 버전으로 고정 |
 | `cancel_run(run_id)` | `run:<job_id>` | 실행 중 Run 취소 |
 
 ## 5. 실행 모드

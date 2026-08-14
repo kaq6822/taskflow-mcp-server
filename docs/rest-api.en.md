@@ -12,7 +12,7 @@ The Backend REST API is served at `http://localhost:8000`. The Frontend (Vite de
 | `POST /api/jobs` | Create job |
 | `PATCH /api/jobs/{id}` | Update job |
 | `DELETE /api/jobs/{id}` | Delete job |
-| `POST /api/jobs/{id}/runs` | Trigger a run (body: `{trigger, actor, artifact_ref?, idempotency_key?}`) |
+| `POST /api/jobs/{id}/runs` | Trigger a run (body: `{trigger, actor, artifact_refs?, idempotency_key?}`) — `artifact_refs` is `{alias: "uploads://<name>@<ver\|latest>"}`; omitted aliases use `@latest` |
 | `GET /api/runs?job_id=&status=&limit=` | Run history |
 | `GET /api/runs/{id}` | Single run (includes `steps[]`) |
 | `GET /api/runs/{id}/logs/{step_id}?tail=200` | Step stdout/stderr log tail |

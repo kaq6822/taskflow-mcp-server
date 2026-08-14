@@ -18,6 +18,18 @@ class StepSpec(BaseModel):
     failure_contains: list[str] = Field(default_factory=list)
 
 
+class ConsumesArtifact(BaseModel):
+    """One artifact a Job consumes.
+
+    `alias` is what steps see: `ARTIFACT_<ALIAS>_PATH` and friends. It is kept
+    separate from `name` so renaming an artifact does not break deploy scripts,
+    and so names containing `.`/`-` cannot collide on the same env key.
+    """
+
+    alias: str
+    name: str
+
+
 class JobCreate(BaseModel):
     id: str
     name: str
@@ -28,7 +40,7 @@ class JobCreate(BaseModel):
     timeout: int = 600
     concurrency: int = 1
     on_failure: Literal["STOP", "CONTINUE", "RETRY", "ROLLBACK"] = "STOP"
-    consumes_artifact: str | None = None
+    consumes_artifacts: list[ConsumesArtifact] = Field(default_factory=list)
     steps: list[StepSpec]
 
 
@@ -41,7 +53,7 @@ class JobUpdate(BaseModel):
     timeout: int | None = None
     concurrency: int | None = None
     on_failure: Literal["STOP", "CONTINUE", "RETRY", "ROLLBACK"] | None = None
-    consumes_artifact: str | None = None
+    consumes_artifacts: list[ConsumesArtifact] | None = None
     steps: list[StepSpec] | None = None
 
 
@@ -57,7 +69,7 @@ class JobOut(BaseModel):
     timeout: int
     concurrency: int
     on_failure: str
-    consumes_artifact: str | None
+    consumes_artifacts: list[dict[str, Any]]
     steps: list[dict[str, Any]]
     created_at: datetime
     updated_at: datetime
@@ -86,7 +98,7 @@ class RunOut(BaseModel):
     finished_at: datetime | None
     duration_sec: float
     order: list[str]
-    artifact_ref: str | None
+    artifact_refs: dict[str, Any] = Field(default_factory=dict)
     failed_step: str | None
     err_message: str | None
     steps: list[RunStepOut] = Field(default_factory=list)
@@ -95,7 +107,9 @@ class RunOut(BaseModel):
 class RunCreate(BaseModel):
     trigger: Literal["manual", "schedule", "mcp"] = "manual"
     actor: str = "web"
-    artifact_ref: str | None = None
+    # {alias: "uploads://<name>@<version|latest>"} — partial maps are fine;
+    # any alias the Job declares but the caller omits defaults to `@latest`.
+    artifact_refs: dict[str, str] = Field(default_factory=dict)
     params: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str | None = None
 
@@ -109,7 +123,7 @@ class AgentRunResult(BaseModel):
     started_at: datetime
     finished_at: datetime | None
     duration_sec: float
-    artifact_ref: str | None
+    artifact_refs: dict[str, Any] = Field(default_factory=dict)
     steps: list[dict[str, Any]]
     failed_step: str | None
     err_message: str | None

@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { ApiError, Step, api } from '../api/client';
+import { ApiError, ConsumesArtifact, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
 import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
@@ -19,7 +19,7 @@ type Draft = {
   timeout: number;
   concurrency: number;
   on_failure: 'STOP' | 'CONTINUE' | 'RETRY' | 'ROLLBACK';
-  consumes_artifact: string | null;
+  consumes_artifacts: ConsumesArtifact[];
   steps: Step[];
 };
 
@@ -33,7 +33,7 @@ const EMPTY: Draft = {
   timeout: 600,
   concurrency: 1,
   on_failure: 'STOP',
-  consumes_artifact: null,
+  consumes_artifacts: [],
   steps: [
     { id: 'greet', cmd: ['echo', 'hello from taskflow'], timeout: 10, on_failure: 'STOP', deps: [] },
   ],
@@ -62,7 +62,7 @@ export function Builder() {
           timeout: existing.timeout,
           concurrency: existing.concurrency,
           on_failure: existing.on_failure as Draft['on_failure'],
-          consumes_artifact: existing.consumes_artifact,
+          consumes_artifacts: existing.consumes_artifacts ?? [],
           steps: existing.steps,
         }
       : EMPTY
@@ -84,7 +84,7 @@ export function Builder() {
         timeout: existing.timeout,
         concurrency: existing.concurrency,
         on_failure: existing.on_failure as Draft['on_failure'],
-        consumes_artifact: existing.consumes_artifact,
+        consumes_artifacts: existing.consumes_artifacts ?? [],
         steps: existing.steps,
       });
     } else {
@@ -196,6 +196,20 @@ function validateDraft(
   const stateCommands = new Set(['cd', 'pushd', 'popd']);
   if (!isExisting && !/^[a-z][a-z0-9-]{1,}$/.test(d.id)) errs.push(t.err_id_format);
   if (!d.name) errs.push(t.err_name_required);
+
+  // Mirrors backend/app/services/artifacts.py validate_consumes so the panel
+  // flags a bad alias before the save round-trip.
+  const aliases = new Set<string>();
+  for (const c of d.consumes_artifacts) {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(c.alias)) errs.push(t.err_alias_format(c.alias));
+    else if (aliases.has(c.alias.toUpperCase())) errs.push(t.err_alias_dup(c.alias));
+    aliases.add(c.alias.toUpperCase());
+    // The alphabet alone would let `a..b` through, which _validate_component
+    // rejects with a separate `".." in value` check.
+    if (!/^[A-Za-z0-9._-]+$/.test(c.name) || c.name.includes('..'))
+      errs.push(t.err_artifact_name_format(c.name));
+  }
+
   const ids = new Set<string>();
   for (const s of d.steps) {
     if (!s.id) errs.push(t.err_step_id_required);
@@ -597,6 +611,12 @@ function MetaEditor({
   isExisting: boolean;
 }) {
   const t = useT();
+  const consumes = draft.consumes_artifacts;
+  const patchConsume = (i: number, patch: Partial<ConsumesArtifact>) =>
+    setDraft({
+      ...draft,
+      consumes_artifacts: consumes.map((c, j) => (j === i ? { ...c, ...patch } : c)),
+    });
   return (
     <div>
       <div className="ctitle">{t.job_meta}</div>
@@ -694,14 +714,61 @@ function MetaEditor({
           />
         </div>
         <div>
-          <FieldLabel help={t.help_job_consumes_artifact}>
-            Consumes artifact (name, optional)
+          <FieldLabel help={t.help_job_consumes_artifacts}>
+            Consumes artifacts (optional)
           </FieldLabel>
-          <input
-            className="input mono sm"
-            value={draft.consumes_artifact || ''}
-            onChange={(e) => setDraft({ ...draft, consumes_artifact: e.target.value || null })}
-          />
+          <div className="col" style={{ gap: 6 }}>
+            {consumes.map((c, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="input mono sm"
+                  style={{ flex: '0 0 32%' }}
+                  placeholder={t.consumes_alias_ph}
+                  value={c.alias}
+                  onChange={(e) => patchConsume(i, { alias: e.target.value })}
+                />
+                <input
+                  className="input mono sm"
+                  style={{ flex: 1 }}
+                  placeholder={t.consumes_name_ph}
+                  value={c.name}
+                  onChange={(e) => patchConsume(i, { name: e.target.value })}
+                />
+                <button
+                  className="btn sm danger"
+                  title={t.consumes_remove}
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      consumes_artifacts: consumes.filter((_, j) => j !== i),
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              className="btn sm"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  consumes_artifacts: [...consumes, { alias: '', name: '' }],
+                })
+              }
+            >
+              + {t.consumes_add}
+            </button>
+            {consumes.some((c) => c.alias.trim()) && (
+              <div className="mono-s dim">
+                {consumes
+                  .filter((c) => c.alias.trim())
+                  .map((c) => `ARTIFACT_${c.alias.toUpperCase()}_PATH`)
+                  .join(' · ')}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -12,7 +12,7 @@ Backend REST API는 `http://localhost:8000`에서 서빙됩니다. Frontend(Vite
 | `POST /api/jobs` | Job 생성 |
 | `PATCH /api/jobs/{id}` | Job 수정 |
 | `DELETE /api/jobs/{id}` | Job 삭제 |
-| `POST /api/jobs/{id}/runs` | Run 트리거 (body: `{trigger, actor, artifact_ref?, idempotency_key?}`) |
+| `POST /api/jobs/{id}/runs` | Run 트리거 (body: `{trigger, actor, artifact_refs?, idempotency_key?}`) — `artifact_refs`는 `{alias: "uploads://<name>@<ver\|latest>"}`, 생략한 alias는 `@latest` |
 | `GET /api/runs?job_id=&status=&limit=` | Run 이력 |
 | `GET /api/runs/{id}` | Run 단건 (`steps[]` 포함) |
 | `GET /api/runs/{id}/logs/{step_id}?tail=200` | Step stdout/stderr 로그 tail |

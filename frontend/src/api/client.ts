@@ -12,6 +12,12 @@ export type Step = {
   failure_contains?: string[];
 };
 
+/** One artifact a Job consumes. `alias` becomes ARTIFACT_<ALIAS>_* in every step. */
+export type ConsumesArtifact = {
+  alias: string;
+  name: string;
+};
+
 export type Job = {
   id: string;
   name: string;
@@ -22,7 +28,7 @@ export type Job = {
   timeout: number;
   concurrency: number;
   on_failure: string;
-  consumes_artifact: string | null;
+  consumes_artifacts: ConsumesArtifact[];
   steps: Step[];
   created_at: string;
   updated_at: string;
@@ -47,7 +53,8 @@ export type Run = {
   finished_at: string | null;
   duration_sec: number;
   order: string[];
-  artifact_ref: string | null;
+  /** Versions pinned when the run started, keyed by the Job's aliases. */
+  artifact_refs: Record<string, { ref: string; sha256: string }>;
   failed_step: string | null;
   err_message: string | null;
   steps: RunStep[];
@@ -143,7 +150,15 @@ export const api = {
     if (!res.ok) throw new ApiError(res.status, await res.text());
     return res.text();
   },
-  startRun: (jobId: string, body: { trigger?: string; actor?: string; artifact_ref?: string | null } = {}) =>
+  startRun: (
+    jobId: string,
+    body: {
+      trigger?: string;
+      actor?: string;
+      /** {alias: 'uploads://<name>@<version>'} — omitted aliases use @latest. */
+      artifact_refs?: Record<string, string>;
+    } = {}
+  ) =>
     req<Run>(`/api/jobs/${jobId}/runs`, {
       method: 'POST',
       body: JSON.stringify({ trigger: 'manual', actor: 'admin', ...body }),

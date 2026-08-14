@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import { api, Artifact, AuditEvent, Job, Key, Run, RunStep } from '../api/client';
+import { ApiError, api, Artifact, AuditEvent, Job, Key, Run, RunStep } from '../api/client';
 import { subscribeRun } from '../api/sse';
 import { Lang, translations } from '../i18n/translations';
 
@@ -63,6 +63,28 @@ type State = {
   pushToast: (msg: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
 };
+
+/** Surface the backend's structured error body — an artifact that is missing,
+ *  still scanning, or bound to the wrong alias arrives as {error, message},
+ *  and "HTTP 404" alone would not tell the operator which artifact failed. */
+function describeError(e: unknown): string {
+  if (e instanceof ApiError) {
+    // ApiError.detail holds the whole parsed body, and FastAPI nests
+    // HTTPException(detail=…) one level deep as {"detail": …}. Unwrap that level
+    // before reading `error`, or the structured message is never seen.
+    const body = e.detail;
+    const d = (
+      body && typeof body === 'object' && 'detail' in body
+        ? (body as { detail: unknown }).detail
+        : body
+    ) as { error?: string; message?: string } | string | undefined;
+    if (d && typeof d === 'object' && d.error) {
+      return d.message ? `${d.error}: ${d.message}` : d.error;
+    }
+    return typeof d === 'string' && d ? d : e.message;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
 
 function detectInitialLang(): Lang {
   if (typeof navigator === 'undefined') return 'ko';
@@ -197,8 +219,7 @@ export const useStore = create<State>()(
           });
           replaceActiveRunStream(run.id, close);
         } catch (e: unknown) {
-          const msg = e instanceof Error ? e.message : String(e);
-          get().pushToast(translations[get().lang].toast_run_start_fail(msg), 'err');
+          get().pushToast(translations[get().lang].toast_run_start_fail(describeError(e)), 'err');
         }
       },
 
