@@ -122,7 +122,7 @@ event: run.finished    data: { status, failed_step?, err_message?, duration_sec 
 
 | HTTP | 의미 | 상황 |
 |---|---|---|
-| 400 `INVALID_ARTIFACT` | 참조 형식 불일치 | `uploads://<name>@<ver>` 파싱 실패 |
+| 400 `INVALID_ARTIFACT` | 참조를 쓸 수 없음 | `uploads://<name>@<ver>` 파싱 실패 · alias에 빈 참조 전달 · 같은 alias 중복 전달 |
 | 400 `UNKNOWN_ALIAS` | Job이 선언하지 않은 alias | `artifact_refs` 키가 `consumesArtifacts`에 없음 |
 | 400 `MISMATCH` | alias와 다른 아티팩트 | 참조가 선언된 name과 다른 아티팩트를 가리킴 |
 | 409 `NOT_READY` | 스캔 미완료 | 아티팩트 `status != READY` |

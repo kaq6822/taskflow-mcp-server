@@ -314,7 +314,7 @@ Developer                AI Agent              TaskFlow MCP             Worker
 - 필수 scope: `run:<job-id>` 또는 `run:*`.
 - 호출: `run_job(job_id, { mode, artifact_refs?, params?, actor? })`
   - `mode`: `'sync' | 'async' | 'stream'` (§10.3 참고).
-  - `artifact_refs`: `{alias: 'uploads://<name>@<ver|latest>'}` 맵. 생략한 alias는 `@latest`로 해석된다. Job이 선언하지 않은 alias는 `UNKNOWN_ALIAS`, 참조가 다른 아티팩트를 가리키면 `MISMATCH`로 거부된다.
+  - `artifact_refs`: `{alias: 'uploads://<name>@<ver|latest>'}` 맵. 생략한 alias는 `@latest`로 해석된다. alias 키는 대소문자를 구분하지 않는다(`jar` 선언에 `JAR` 전달 가능). Job이 선언하지 않은 alias는 `UNKNOWN_ALIAS`, 참조가 다른 아티팩트를 가리키면 `MISMATCH`로 거부된다. 생략과 달리 **빈 참조를 명시적으로 전달하면** `@latest`로 대체하지 않고 `INVALID_ARTIFACT`로 거부한다.
   - `params`: Job 정의에서 허용된 key만 통과 (unknown key는 DENY).
 - scope 검증 실패 시 **DENY + audit `auth.fail`** — Run은 생성되지 않음.
 - 동시성 검사: 해당 Job에 `liveRun`이 있으면 거부(429 또는 409) + 기존 run_id 반환.
