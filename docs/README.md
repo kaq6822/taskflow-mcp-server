@@ -12,6 +12,7 @@
 | 문서 | 다루는 내용 |
 |---|---|
 | [getting-started.md](./getting-started.md) | 설치 · 첫 Job 만들기 · argv allowlist |
+| [artifacts.md](./artifacts.md) | 업로드 · Job에서 alias 선언 · step에서 `ARTIFACT_*` 사용 · 버전 고정 |
 | [mcp-api.md](./mcp-api.md) | Key 발급 · JSON-RPC 호출 · 도구 목록 · Claude Desktop 연동 |
 | [rest-api.md](./rest-api.md) | 엔드포인트 · SSE 이벤트 포맷 · 오류 코드 |
 | [operations.md](./operations.md) | 실행 모드(A/B/C) · 네트워크 바인딩 · 프로덕션 릴리즈 · 환경변수 |

@@ -51,6 +51,28 @@ async def test_omitted_alias_resolves_latest_and_pins(session):
 
 
 @pytest.mark.asyncio
+async def test_latest_follows_upload_order_not_version_string(session):
+    """docs/artifacts.md documents `latest` as "most recently uploaded", not the
+    highest version string. Uploading an older-looking version last must win."""
+    await _upload(session, "myapp", "v2.0.0")
+    await _upload(session, "myapp", "v1.9.0")
+
+    art = await resolve_reference(session, "uploads://myapp@latest")
+    assert art.version == "v1.9.0"
+
+
+@pytest.mark.asyncio
+async def test_stored_artifact_is_read_only(session):
+    """The guide tells users to copy before working on the file."""
+    await _upload(session, "myapp", "v1.0.0")
+    art = await resolve_reference(session, "uploads://myapp@v1.0.0")
+
+    from pathlib import Path
+
+    assert Path(art.blob_path).stat().st_mode & 0o777 == 0o444
+
+
+@pytest.mark.asyncio
 async def test_explicit_version_overrides_latest(session):
     await _upload(session, "myapp", "v1.0.0")
     await _upload(session, "myapp", "v1.1.0")
@@ -193,6 +215,12 @@ async def test_latest_is_deterministic_when_two_rows_are_flagged(session):
 
     art = await resolve_reference(session, "uploads://myapp@latest")
     assert art.version == "v2.0.0"
+
+    # The MCP `get_artifact` status check must agree with what a run would pin.
+    from app.services.artifacts import latest_stmt
+
+    row = (await session.execute(latest_stmt("myapp").limit(1))).scalar_one_or_none()
+    assert row is not None and row.version == "v2.0.0"
 
 
 @pytest.mark.asyncio

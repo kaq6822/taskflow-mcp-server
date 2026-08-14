@@ -17,6 +17,7 @@ from app.models import Artifact, Job, Run, RunStep
 from app.services.artifacts import (
     ArtifactResolutionError,
     ArtifactValidationError,
+    latest_stmt,
     save_upload_bytes,
 )
 from app.services.audit import append_event
@@ -211,13 +212,9 @@ def register_tools(mcp: FastMCP) -> None:
         await _require(ctx, "read:jobs", target=f"{name}@{version}")
         async with SessionLocal() as s:
             if version == "latest":
-                row = (
-                    await s.execute(
-                        select(Artifact)
-                        .where(Artifact.name == name, Artifact.latest)
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
+                # Same statement `resolve_reference` uses, so a status check and
+                # the version a run pins cannot disagree.
+                row = (await s.execute(latest_stmt(name).limit(1))).scalar_one_or_none()
             else:
                 row = (
                     await s.execute(

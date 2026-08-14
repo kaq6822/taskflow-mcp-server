@@ -10,6 +10,7 @@ This folder contains two types of documents:
 | Document | Contents |
 |---|---|
 | [getting-started.en.md](./getting-started.en.md) | Installation · First job · argv allowlist |
+| [artifacts.en.md](./artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
 | [mcp-api.en.md](./mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [rest-api.en.md](./rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [operations.en.md](./operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |
