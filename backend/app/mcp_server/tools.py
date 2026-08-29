@@ -6,6 +6,7 @@ import binascii
 
 from mcp.server.fastmcp import Context, FastMCP
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -286,6 +287,26 @@ def register_tools(mcp: FastMCP) -> None:
                     artifact_refs=artifact_refs,
                     idempotency_key=idempotency_key,
                 )
+            except IntegrityError:
+                # Same non-atomic check-then-insert as the REST handler.
+                if not idempotency_key:
+                    raise
+                await s.rollback()
+                winner = (
+                    await s.execute(
+                        select(Run)
+                        .options(selectinload(Run.steps))
+                        .where(Run.idempotency_key == idempotency_key)
+                    )
+                ).scalar_one_or_none()
+                if winner is None:
+                    raise
+                if winner.job_id != job_id:
+                    raise RuntimeError(
+                        f"CONFLICT: idempotency_key {idempotency_key!r} is "
+                        f"already used by another job"
+                    )
+                return _run_to_dict(winner, winner.steps)
             except ArtifactResolutionError as e:
                 await append_event(
                     s,

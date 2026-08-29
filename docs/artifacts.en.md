@@ -159,7 +159,7 @@ Steps run with `shell=False` (`subprocess.Popen(argv)`). argv elements are never
 
 ### ⚠️ The step command must be in the allowlist
 
-`/bin/bash` is **not** in the default allowlist. To handle artifacts from a script, add it to `backend/app/dev/allowlist.yaml` and restart the backend; otherwise saving the Job is rejected with `argv not in allowlist: /bin/bash`. **Register the script by absolute path** — a relative entry would authorise any same-named script in any directory. See [Artifact Jobs §0](./artifact-jobs.md) and [Security](./security.en.md).
+`/bin/bash` is **not** in the default allowlist. To handle artifacts from a script, add it to `backend/app/dev/allowlist.yaml` and restart the backend; otherwise saving the Job is rejected with `argv not in allowlist: /bin/bash`. **Register the script by absolute path** — a relative entry would authorise any same-named script in any directory. See [Artifact Jobs §0](./artifact-jobs.en.md) and [Security](./security.en.md).
 
 ### Other things to watch for
 

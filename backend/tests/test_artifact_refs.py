@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -68,8 +69,6 @@ async def test_stored_artifact_is_read_only(session):
     """The guide tells users to copy before working on the file."""
     await _upload(session, "myapp", "v1.0.0")
     art = await resolve_reference(session, "uploads://myapp@v1.0.0")
-
-    from pathlib import Path
 
     assert Path(art.blob_path).stat().st_mode & 0o777 == 0o444
 
@@ -444,11 +443,25 @@ async def test_artifact_path_env_is_absolute_for_a_relative_blob_path(session):
 
 
 @pytest.mark.asyncio
-async def test_upload_stores_an_absolute_blob_path(session):
+async def test_upload_stores_an_absolute_blob_path(session, tmp_path, monkeypatch):
     """Resolving at read time would use whatever cwd the server has then, so the
-    absolute form is written at upload."""
+    absolute form is written at upload.
+
+    conftest forces an absolute `TASKFLOW_STORAGE_DIR`, under which `final_path`
+    is already absolute and this would pass either way — point `artifacts_dir`
+    at a *relative* directory, which is the shipped default's shape.
+    """
     import os
 
-    await _upload(session, "myapp", "v1.0.0")
-    art = await resolve_reference(session, "uploads://myapp@v1.0.0")
+    from app.config import settings
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        type(settings), "artifacts_dir", property(lambda _: Path("./storage/artifacts"))
+    )
+    assert not settings.artifacts_dir.is_absolute()  # the condition under test
+
+    await _upload(session, "relapp", "v1.0.0")
+    art = await resolve_reference(session, "uploads://relapp@v1.0.0")
     assert os.path.isabs(art.blob_path), art.blob_path
+    assert Path(art.blob_path).exists()

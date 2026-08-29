@@ -21,9 +21,9 @@ allow:
   - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
 ```
 
-> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`인데 allowlist에는 절대 경로로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
+> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "deploy.sh"]`인데 allowlist에는 `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
 
-> ⚠️ **스크립트는 반드시 절대 경로로 등록한다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`처럼 상대 경로로 등록하면 **호스트의 어느 디렉터리에 있는 `deploy.sh`든 실행할 수 있게 된다.** step의 `cwd`는 Job 작성자가 정하는 값이고 검증되지 않으므로, `{"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "cwd": "/tmp/무엇이든"}`이 그대로 통과한다. 절대 경로로 등록해야 실행할 파일이 하나로 고정된다.
+> ⚠️ **스크립트는 반드시 절대 경로로 등록한다.** `["/bin/bash", "deploy.sh"]`처럼 **상대 경로로 등록하면 호스트의 어느 디렉터리에 있는 `deploy.sh`든 실행할 수 있게 된다.** step의 `cwd`는 Job 작성자가 정하는 값이고 검증되지 않으므로, `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/무엇이든"}`이 그대로 통과한다. 절대 경로로 등록해야 실행할 파일이 하나로 고정된다.
 
 각 항목은 **argv의 앞부분(prefix)** 과 매칭된다. `["echo"]`는 `echo`로 시작하는 모든 호출을 허용하고, `["/bin/bash", "/opt/…/deploy.sh"]`는 그 스크립트를 실행하는 경우만 허용한다.
 
@@ -38,7 +38,7 @@ allow:
 
 즉 "특정 디렉터리의 스크립트만" 같은 제한은 표현할 수 없다. 허용할 스크립트를 하나씩 나열해야 한다.
 
-또한 **prefix 검사이므로 등록한 원소 뒤에 인자를 더 붙이는 것은 허용된다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`는 `/bin/bash deploy.sh --force`도 통과시킨다. 스크립트가 받는 인자까지 제한하려면 그 인자를 항목에 포함해야 한다.
+또한 **prefix 검사이므로 등록한 원소 뒤에 인자를 더 붙이는 것은 허용된다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`는 `/bin/bash /opt/taskflow/scripts/deploy.sh --force`도 통과시킨다. 스크립트가 받는 인자까지 제한하려면 그 인자를 항목에 포함해야 한다.
 
 > **`["/bin/bash"]`나 `["/bin/bash", "*"]`는 임의의 스크립트를 실행할 수 있게 만든다.** 두 번째 원소에 스크립트 경로를 정확히 적어 좁히는 편이 안전하다.
 
@@ -61,7 +61,7 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② 스크립트 배치** — allowlist에 등록한 절대 경로에 둔다. step의 작업 디렉터리(기본값 `storage/runtime`)와는 별개다: 스크립트는 `/opt/taskflow/scripts/`에서 실행되고, 그 안에서 만드는 파일은 작업 디렉터리에 쌓인다.
+**② 스크립트 배치** — allowlist에 등록한 절대 경로에 둔다. 스크립트가 **놓이는 위치**와 **실행될 때의 작업 디렉터리**는 별개다: 파일은 `/opt/taskflow/scripts/`에 있지만 실행 시 cwd는 기본값 `storage/runtime`이므로, 아래 예제의 `./app.jar`는 `storage/runtime/app.jar`로 생긴다.
 
 ```bash
 # /opt/taskflow/scripts/deploy.sh

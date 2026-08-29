@@ -21,9 +21,9 @@ allow:
   - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
 ```
 
-> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` does not match an allowlist entry written with an absolute path. Each script needs its own entry.
+> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "deploy.sh"]` does not match an entry written as `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`. Each script needs its own entry.
 
-> ⚠️ **Always register scripts by absolute path.** A relative entry such as `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` authorises **any `deploy.sh` anywhere on the host**: a step's `cwd` is chosen by whoever writes the Job and is not validated, so `{"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "cwd": "/tmp/anything"}` passes. Only an absolute entry pins execution to one file.
+> ⚠️ **Always register scripts by absolute path.** A relative entry such as `["/bin/bash", "deploy.sh"]` authorises **any `deploy.sh` anywhere on the host**: a step's `cwd` is chosen by whoever writes the Job and is not validated, so `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/anything"}` passes. Only an absolute entry pins execution to one file.
 
 Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any invocation starting with `echo`; `["/bin/bash", "/opt/…/deploy.sh"]` allows only that script.
 
@@ -38,7 +38,7 @@ Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any 
 
 So "only scripts in this directory" cannot be expressed. List each allowed script individually.
 
-Also, because this is a **prefix** check, extra arguments after the registered elements are allowed: `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` also permits `/bin/bash deploy.sh --force`. To constrain the arguments too, include them in the entry.
+Also, because this is a **prefix** check, extra arguments after the registered elements are allowed: `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` also permits `/bin/bash /opt/taskflow/scripts/deploy.sh --force`. To constrain the arguments too, include them in the entry.
 
 > **`["/bin/bash"]` and `["/bin/bash", "*"]` let any script run.** Naming the script path as the second element is the safer shape.
 
@@ -61,7 +61,7 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② Place the script** — at the absolute path you allowlisted. That is separate from the step's working directory (`storage/runtime` by default): the script is executed from `/opt/taskflow/scripts/`, and files it creates land in the working directory.
+**② Place the script** — at the absolute path you allowlisted. Where the script *lives* and the directory it *runs in* are separate: the file sits in `/opt/taskflow/scripts/`, but the cwd is `storage/runtime` by default, so the `./app.jar` in the example below is created as `storage/runtime/app.jar`.
 
 ```bash
 # /opt/taskflow/scripts/deploy.sh

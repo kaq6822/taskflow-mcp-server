@@ -175,6 +175,10 @@ async def start_run(
         # The lookup above and this insert are not atomic, and the key is unique
         # table-wide: a concurrent trigger for another job can claim it in
         # between. Re-read and answer as the lookup would have.
+        if not body.idempotency_key:
+            # Nothing to replay — an unkeyed trigger can still hit the FK (a
+            # concurrent job delete), and `IS NULL` would match unrelated runs.
+            raise
         await session.rollback()
         winner = (
             await session.execute(

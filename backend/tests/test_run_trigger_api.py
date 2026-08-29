@@ -85,4 +85,6 @@ async def test_idempotency_key_reused_across_jobs_is_rejected(session):
     # `current_run_id` is part of the documented 409 contract, and the other
     # job's id must not leak to a caller scoped to this one.
     assert cross.json()["detail"]["current_run_id"] is None
-    assert "other-job" not in cross.text
+    # The id at risk of leaking is the *other* job's — the one holding the
+    # key — not the caller's own, which it already knows.
+    assert "idem-job" not in cross.text
