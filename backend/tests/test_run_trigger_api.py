@@ -53,3 +53,33 @@ async def test_replayed_idempotency_key_returns_the_same_run(session):
     assert replay.status_code == 201, replay.text
     assert replay.json()["id"] == first.json()["id"]
     assert [s["step_id"] for s in replay.json()["steps"]] == ["s1"]
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_reused_across_jobs_is_rejected(session):
+    """`Run.idempotency_key` is unique table-wide. Replaying one under a second
+    job must not hand back the first job's run — the caller would see 201 for a
+    deploy that never ran. CI reusing one key per commit across several deploy
+    jobs is exactly that shape."""
+    session.add(_job())
+    other = _job()
+    other.id = "idem-job-2"
+    session.add(other)
+    await session.commit()
+
+    client = await _client(session)
+    try:
+        async with client:
+            first = await client.post(
+                "/api/jobs/idem-job/runs", json={"idempotency_key": "deploy-abc"}
+            )
+            cross = await client.post(
+                "/api/jobs/idem-job-2/runs", json={"idempotency_key": "deploy-abc"}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert first.status_code == 201
+    assert cross.status_code == 409, cross.text
+    assert cross.json()["detail"]["error"] == "CONFLICT"
+    assert "idem-job" in cross.json()["detail"]["message"]

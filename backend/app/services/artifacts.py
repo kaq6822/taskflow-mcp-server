@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -230,10 +231,20 @@ async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
 
 
 def artifact_env(alias: str, art: Artifact) -> dict[str, str]:
-    """Environment variables handed to every step of a run consuming `art`."""
+    """Environment variables handed to every step of a run consuming `art`.
+
+    `_PATH` is made absolute. `blob_path` is stored exactly as
+    `settings.artifacts_dir` was configured, and that defaults to the relative
+    `./storage/artifacts`; steps run from their own cwd (`storage/runtime` by
+    default), where such a path does not resolve. Handing the subprocess a
+    relative path makes every artifact unreadable under the shipped defaults.
+
+    `abspath`, not `resolve()`: an already-absolute path must survive unchanged,
+    and resolving symlinks would rewrite it (macOS `/var` → `/private/var`).
+    """
     p = f"ARTIFACT_{alias.upper()}"
     return {
-        f"{p}_PATH": art.blob_path,
+        f"{p}_PATH": os.path.abspath(art.blob_path),
         f"{p}_NAME": art.name,
         f"{p}_VERSION": art.version,
         f"{p}_SHA256": art.sha256,

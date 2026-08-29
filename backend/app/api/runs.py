@@ -115,7 +115,22 @@ async def start_run(
                 .where(Run.idempotency_key == body.idempotency_key)
             )
         ).scalar_one_or_none()
-        if existing:
+        if existing is not None:
+            # The key is unique across the whole table, so it can belong to a
+            # different job. Replaying it there must not hand back that job's
+            # run (a 201 for a deploy that never happened), and it cannot be
+            # inserted either — say so instead of failing on the constraint.
+            if existing.job_id != job_id:
+                raise HTTPException(
+                    409,
+                    detail={
+                        "error": "CONFLICT",
+                        "message": (
+                            f"idempotency_key {body.idempotency_key!r} is already "
+                            f"used by job {existing.job_id!r}"
+                        ),
+                    },
+                )
             return existing
 
     engine = get_engine()

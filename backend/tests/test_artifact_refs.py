@@ -405,3 +405,18 @@ def test_invalid_alias_is_rejected(alias):
 def test_traversal_in_artifact_name_is_rejected():
     with pytest.raises(ArtifactValidationError):
         validate_consumes([{"alias": "jar", "name": "../../etc/passwd"}])
+
+
+@pytest.mark.asyncio
+async def test_artifact_path_env_is_absolute(session):
+    """`TASKFLOW_STORAGE_DIR` defaults to the relative `./storage`, but steps run
+    from their own cwd — a relative `_PATH` would not resolve in the subprocess,
+    making every documented `cp "$ARTIFACT_..._PATH"` recipe fail."""
+    from pathlib import Path
+
+    await _upload(session, "myapp", "v1.0.0")
+    art = await resolve_reference(session, "uploads://myapp@v1.0.0")
+
+    path = artifact_env("jar", art)["ARTIFACT_JAR_PATH"]
+    assert Path(path).is_absolute(), path
+    assert Path(path).exists()

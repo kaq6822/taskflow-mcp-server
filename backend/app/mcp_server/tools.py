@@ -261,7 +261,15 @@ def register_tools(mcp: FastMCP) -> None:
                         .where(Run.idempotency_key == idempotency_key)
                     )
                 ).scalar_one_or_none()
-                if existing:
+                if existing is not None:
+                    # See the REST handler: the key is unique table-wide, so a
+                    # replay under a different job must be rejected rather than
+                    # returning that job's run.
+                    if existing.job_id != job_id:
+                        raise RuntimeError(
+                            f"CONFLICT: idempotency_key {idempotency_key!r} is already "
+                            f"used by job {existing.job_id!r}"
+                        )
                     return _run_to_dict(existing, existing.steps)
             if engine.live_run_for(job_id):
                 raise RuntimeError(

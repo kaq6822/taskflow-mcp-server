@@ -15,10 +15,15 @@ allow:
   - ["echo"]
   - ["printf"]
   - ["cat"]
-  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]   # 이 스크립트만 허용
-  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]   # 허용할 스크립트를 하나씩 나열
   - ["/usr/bin/shasum"]
+  # 이 문서의 예제들은 storage/runtime의 스크립트를 상대 경로로 실행한다
+  - ["/bin/bash", "deploy.sh"]
+  - ["/bin/bash", "verify.sh"]
+  # 절대 경로로 실행하면 위치까지 고정할 수 있다
+  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
 ```
+
+> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "deploy.sh"]`인데 allowlist에는 절대 경로로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
 
 각 항목은 **argv의 앞부분(prefix)** 과 매칭된다. `["echo"]`는 `echo`로 시작하는 모든 호출을 허용하고, `["/bin/bash", "/opt/…/deploy.sh"]`는 그 스크립트를 실행하는 경우만 허용한다.
 
@@ -90,7 +95,8 @@ echo "DEPLOY_OK"
 **④ 실행** — `artifact_refs`를 생략하면 최신 업로드가 쓰인다.
 
 ```bash
-curl -X POST http://localhost:8000/api/jobs/deploy-app/runs -d '{}'
+curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
 ---
@@ -267,13 +273,15 @@ run_job(
 
 `idempotency_key`를 주면 같은 키로 다시 호출해도 새 run이 생기지 않고 기존 run이 반환되므로, 재시도가 중복 배포로 이어지지 않는다.
 
+> 키는 **테이블 전체에서 유일**하다. 여러 Job을 같은 커밋으로 배포한다면 Job마다 키를 다르게 잡아야 한다(`deploy-app-<SHA>`, `deploy-worker-<SHA>`). 다른 Job에서 같은 키를 재사용하면 `CONFLICT`로 거부된다.
+
 **③ 결과 확인** — 응답의 `artifact_refs`에는 실제로 배포된 구체 버전과 sha256이 남는다.
 
 ```json
 {
   "status": "SUCCESS",
   "artifact_refs": {"jar": {"ref": "uploads://myapp@a1b2c3d", "sha256": "…"}},
-  "steps": [{"step_id": "deploy", "state": "SUCCESS"}]
+  "steps": [{"id": "deploy", "state": "SUCCESS", "elapsed_sec": 12.4}]
 }
 ```
 

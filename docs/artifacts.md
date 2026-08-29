@@ -151,7 +151,7 @@ step은 `shell=False`로 실행된다(`subprocess.Popen(argv)`). argv 원소는 
 "cmd": ["cp", "$ARTIFACT_JAR_PATH", "./app.jar"]
 ```
 
-`$ARTIFACT_JAR_PATH`가 그 7글자 문자열 그대로 `cp`에 전달된다. 환경변수는 **step이 실행하는 프로그램 안에서** 읽어야 한다. 위 예시처럼 스크립트로 감싸거나, 환경변수를 직접 읽는 프로그램을 쓴다.
+`$ARTIFACT_JAR_PATH`가 그 문자열 그대로 `cp`에 전달된다. 환경변수는 **step이 실행하는 프로그램 안에서** 읽어야 한다. 위 예시처럼 스크립트로 감싸거나, 환경변수를 직접 읽는 프로그램을 쓴다.
 
 ```json
 "cmd": ["/bin/bash", "deploy.sh"]
@@ -176,7 +176,8 @@ step은 `shell=False`로 실행된다(`subprocess.Popen(argv)`). argv 원소는 
 `artifact_refs`를 주지 않으면 선언된 모든 alias가 `@latest`로 해석된다.
 
 ```bash
-curl -X POST http://localhost:8000/api/jobs/deploy-app/runs -d '{}'
+curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
 > **`latest`는 "가장 최근에 업로드된 것"이다.** 버전 문자열을 비교해 고르는 것이 아니다. `v2.0.0`을 올린 뒤 `v1.9.0`을 올리면 `latest`는 `v1.9.0`이 된다.

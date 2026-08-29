@@ -141,6 +141,7 @@ At the same time, `mcp.run` (src=mcp) and `job.run.done` events are recorded in 
 ## 6. Idempotency
 
 Passing an `idempotency_key` to `run_job` will **return the existing run_id** on re-invocation with the same key (backed by `Run.idempotency_key` unique index in the DB).
+The key is unique table-wide, so **each job needs its own key.** Reusing one under a different job is rejected with `CONFLICT` rather than returning that job's run.
 
 ## 7. Claude Desktop Integration
 

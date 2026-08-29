@@ -15,10 +15,15 @@ allow:
   - ["echo"]
   - ["printf"]
   - ["cat"]
-  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]   # only this script
-  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]   # list each allowed script
   - ["/usr/bin/shasum"]
+  # the examples in this document run scripts in storage/runtime by relative path
+  - ["/bin/bash", "deploy.sh"]
+  - ["/bin/bash", "verify.sh"]
+  # an absolute path pins the location too
+  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
 ```
+
+> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "deploy.sh"]` does not match an allowlist entry written with an absolute path. Each script needs its own entry.
 
 Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any invocation starting with `echo`; `["/bin/bash", "/opt/…/deploy.sh"]` allows only that script.
 
@@ -90,7 +95,8 @@ echo "DEPLOY_OK"
 **④ Run** — omit `artifact_refs` and the latest upload is used.
 
 ```bash
-curl -X POST http://localhost:8000/api/jobs/deploy-app/runs -d '{}'
+curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
 ---
@@ -267,13 +273,15 @@ run_job(
 
 With `idempotency_key`, calling again with the same key returns the existing run instead of creating a new one, so a retry does not become a double deploy.
 
+> The key is **unique table-wide**. If one commit deploys several jobs, give each its own key (`deploy-app-<SHA>`, `deploy-worker-<SHA>`). Reusing one under a different job is rejected with `CONFLICT`.
+
 **③ Confirm** — the response's `artifact_refs` records the concrete version and sha256 that were actually deployed.
 
 ```json
 {
   "status": "SUCCESS",
   "artifact_refs": {"jar": {"ref": "uploads://myapp@a1b2c3d", "sha256": "…"}},
-  "steps": [{"step_id": "deploy", "state": "SUCCESS"}]
+  "steps": [{"id": "deploy", "state": "SUCCESS", "elapsed_sec": 12.4}]
 }
 ```
 

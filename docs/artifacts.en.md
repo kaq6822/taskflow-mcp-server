@@ -151,7 +151,7 @@ Steps run with `shell=False` (`subprocess.Popen(argv)`). argv elements are never
 "cmd": ["cp", "$ARTIFACT_JAR_PATH", "./app.jar"]
 ```
 
-`cp` receives the literal 20-character string. The variables must be read **inside the program the step runs** — wrap them in a script as above, or use a program that reads the environment itself.
+`cp` receives the literal string. The variables must be read **inside the program the step runs** — wrap them in a script as above, or use a program that reads the environment itself.
 
 ```json
 "cmd": ["/bin/bash", "deploy.sh"]
@@ -176,7 +176,8 @@ Steps run with `shell=False` (`subprocess.Popen(argv)`). argv elements are never
 Omit `artifact_refs` and every declared alias resolves to `@latest`.
 
 ```bash
-curl -X POST http://localhost:8000/api/jobs/deploy-app/runs -d '{}'
+curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
+  -H 'Content-Type: application/json' -d '{}'
 ```
 
 > **`latest` means "most recently uploaded"**, not "highest version string". Upload `v2.0.0` and then `v1.9.0`, and `latest` is `v1.9.0`.
