@@ -16,14 +16,14 @@ allow:
   - ["printf"]
   - ["cat"]
   - ["/usr/bin/shasum"]
-  # 이 문서의 예제들은 storage/runtime의 스크립트를 상대 경로로 실행한다
-  - ["/bin/bash", "deploy.sh"]
-  - ["/bin/bash", "verify.sh"]
-  # 절대 경로로 실행하면 위치까지 고정할 수 있다
-  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
+  # 스크립트는 절대 경로로 — 아래 경고 참고
+  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
 ```
 
-> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "deploy.sh"]`인데 allowlist에는 절대 경로로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
+> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`인데 allowlist에는 절대 경로로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
+
+> ⚠️ **스크립트는 반드시 절대 경로로 등록한다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`처럼 상대 경로로 등록하면 **호스트의 어느 디렉터리에 있는 `deploy.sh`든 실행할 수 있게 된다.** step의 `cwd`는 Job 작성자가 정하는 값이고 검증되지 않으므로, `{"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "cwd": "/tmp/무엇이든"}`이 그대로 통과한다. 절대 경로로 등록해야 실행할 파일이 하나로 고정된다.
 
 각 항목은 **argv의 앞부분(prefix)** 과 매칭된다. `["echo"]`는 `echo`로 시작하는 모든 호출을 허용하고, `["/bin/bash", "/opt/…/deploy.sh"]`는 그 스크립트를 실행하는 경우만 허용한다.
 
@@ -38,7 +38,7 @@ allow:
 
 즉 "특정 디렉터리의 스크립트만" 같은 제한은 표현할 수 없다. 허용할 스크립트를 하나씩 나열해야 한다.
 
-또한 **prefix 검사이므로 등록한 원소 뒤에 인자를 더 붙이는 것은 허용된다.** `["/bin/bash", "deploy.sh"]`는 `/bin/bash deploy.sh --force`도 통과시킨다. 스크립트가 받는 인자까지 제한하려면 그 인자를 항목에 포함해야 한다.
+또한 **prefix 검사이므로 등록한 원소 뒤에 인자를 더 붙이는 것은 허용된다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`는 `/bin/bash deploy.sh --force`도 통과시킨다. 스크립트가 받는 인자까지 제한하려면 그 인자를 항목에 포함해야 한다.
 
 > **`["/bin/bash"]`나 `["/bin/bash", "*"]`는 임의의 스크립트를 실행할 수 있게 만든다.** 두 번째 원소에 스크립트 경로를 정확히 적어 좁히는 편이 안전하다.
 
@@ -61,10 +61,10 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② 스크립트 배치** — step의 기본 작업 디렉터리인 `storage/runtime/`에 둔다(또는 `cwd`를 지정해 다른 위치를 쓴다).
+**② 스크립트 배치** — allowlist에 등록한 절대 경로에 둔다. step의 작업 디렉터리(기본값 `storage/runtime`)와는 별개다: 스크립트는 `/opt/taskflow/scripts/`에서 실행되고, 그 안에서 만드는 파일은 작업 디렉터리에 쌓인다.
 
 ```bash
-# storage/runtime/deploy.sh
+# /opt/taskflow/scripts/deploy.sh
 #!/usr/bin/env bash
 set -euo pipefail
 cp "$ARTIFACT_JAR_PATH" ./app.jar     # 원본은 0444라 복사해서 쓴다
@@ -83,7 +83,7 @@ echo "DEPLOY_OK"
   "steps": [
     {
       "id": "deploy",
-      "cmd": ["/bin/bash", "deploy.sh"],
+      "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],
       "timeout": 300,
       "deps": [],
       "success_contains": ["DEPLOY_OK"]
@@ -106,7 +106,7 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 | 단계 | 확인할 것 | 빠뜨리면 |
 |---|---|---|
 | ① allowlist | 실행할 명령이 `allowlist.yaml`에 있고 백엔드를 재시작했는가 | Job 저장 시 `400 argv not in allowlist` |
-| ② 스크립트 위치 | `storage/runtime/`에 있는가, 또는 step에 `cwd`를 지정했는가 | `exit 127 executable not found` 또는 `126 cwd not found` |
+| ② 스크립트 위치 | allowlist에 적은 절대 경로에 파일이 실제로 있는가 | `exit 127 executable not found` |
 | ③ alias 선언 | `consumes_artifacts`에 alias가 있는가 | `ARTIFACT_*`가 주입되지 않음 (조용히 빈 변수) |
 | ④ cmd | 환경변수를 스크립트 **안에서** 읽는가 | `$ARTIFACT_...`가 문자열 그대로 전달됨 |
 | ⑤ 판정 | 성공 조건이 exit code만으로 충분한가 | 실패를 성공으로 오판 |
@@ -121,9 +121,9 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 
 ```json
 "steps": [
-  {"id": "verify",  "cmd": ["/bin/bash", "verify.sh"],  "timeout": 60,  "deps": []},
-  {"id": "deploy",  "cmd": ["/bin/bash", "deploy.sh"],  "timeout": 300, "deps": ["verify"]},
-  {"id": "health",  "cmd": ["/bin/bash", "health.sh"],  "timeout": 60,  "deps": ["deploy"]}
+  {"id": "verify",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/verify.sh"],  "timeout": 60,  "deps": []},
+  {"id": "deploy",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],  "timeout": 300, "deps": ["verify"]},
+  {"id": "health",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/health.sh"],  "timeout": 60,  "deps": ["deploy"]}
 ]
 ```
 
@@ -136,7 +136,7 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 `ARTIFACT_<ALIAS>_SHA256`은 업로드 시 계산된 해시다. 배포 전에 파일과 대조할 수 있다.
 
 ```bash
-# storage/runtime/verify.sh
+# /opt/taskflow/scripts/verify.sh
 #!/usr/bin/env bash
 set -euo pipefail
 actual=$(shasum -a 256 "$ARTIFACT_JAR_PATH" | cut -d' ' -f1)
@@ -154,7 +154,7 @@ exit code만으로 부족할 때 `success_contains`(반드시 나와야 하는 �
 ```json
 {
   "id": "deploy",
-  "cmd": ["/bin/bash", "deploy.sh"],
+  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],
   "timeout": 300,
   "deps": [],
   "success_contains": ["DEPLOY_OK"],
@@ -190,8 +190,8 @@ step에 지정하면 Job 기본값을 덮어쓴다.
 
 ```json
 "steps": [
-  {"id": "fetch",  "cmd": ["/bin/bash", "fetch.sh"],  "timeout": 60,  "deps": [], "on_failure": "RETRY"},
-  {"id": "deploy", "cmd": ["/bin/bash", "deploy.sh"], "timeout": 300, "deps": ["fetch"], "on_failure": "STOP"}
+  {"id": "fetch",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"],  "timeout": 60,  "deps": [], "on_failure": "RETRY"},
+  {"id": "deploy", "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "timeout": 300, "deps": ["fetch"], "on_failure": "STOP"}
 ]
 ```
 
@@ -210,8 +210,8 @@ alias는 step이 보는 이름이므로, 아티팩트 이름이 아니라 **역�
     {"alias": "migration", "name": "myapp-db-migration"}
   ],
   "steps": [
-    {"id": "migrate", "cmd": ["/bin/bash", "migrate.sh"], "timeout": 600, "deps": []},
-    {"id": "deploy",  "cmd": ["/bin/bash", "deploy.sh"],  "timeout": 300, "deps": ["migrate"]}
+    {"id": "migrate", "cmd": ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"], "timeout": 600, "deps": []},
+    {"id": "deploy",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],  "timeout": 300, "deps": ["migrate"]}
   ]
 }
 ```

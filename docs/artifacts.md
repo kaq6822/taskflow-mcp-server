@@ -97,7 +97,7 @@ curl -X POST http://localhost:8000/api/jobs \
       {"alias": "conf", "name": "myapp-config"}
     ],
     "steps": [
-      {"id": "deploy", "cmd": ["/bin/bash", "deploy.sh"], "timeout": 300, "deps": []}
+      {"id": "deploy", "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "timeout": 300, "deps": []}
     ]
   }'
 ```
@@ -154,12 +154,12 @@ step은 `shell=False`로 실행된다(`subprocess.Popen(argv)`). argv 원소는 
 `$ARTIFACT_JAR_PATH`가 그 문자열 그대로 `cp`에 전달된다. 환경변수는 **step이 실행하는 프로그램 안에서** 읽어야 한다. 위 예시처럼 스크립트로 감싸거나, 환경변수를 직접 읽는 프로그램을 쓴다.
 
 ```json
-"cmd": ["/bin/bash", "deploy.sh"]
+"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
 ```
 
 ### ⚠️ step 명령은 allowlist에 있어야 한다
 
-`/bin/bash`는 기본 allowlist에 **없다.** 스크립트로 아티팩트를 다루려면 `backend/app/dev/allowlist.yaml`에 추가하고 백엔드를 재시작해야 하며, 그렇지 않으면 Job 저장 시 `argv not in allowlist: /bin/bash`로 거부된다. allowlist에 명령을 추가하는 것은 워커에 그 실행 권한을 주는 명시적 동의다 — [Security](./security.md) 참고.
+`/bin/bash`는 기본 allowlist에 **없다.** 스크립트로 아티팩트를 다루려면 `backend/app/dev/allowlist.yaml`에 추가하고 백엔드를 재시작해야 하며, 그렇지 않으면 Job 저장 시 `argv not in allowlist: /bin/bash`로 거부된다. 이때 **스크립트는 절대 경로로 등록해야 한다** — 상대 경로로 등록하면 임의 디렉터리의 동명 스크립트가 실행될 수 있다. 자세한 내용은 [Artifact Jobs §0](./artifact-jobs.md)과 [Security](./security.md) 참고.
 
 ### 그 외 주의할 점
 

@@ -1,6 +1,8 @@
 """Multi-artifact consumption: alias resolution, pinning, and env projection."""
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.engine.run_engine import RunEngine
@@ -312,7 +314,7 @@ async def test_artifact_env_projection(session):
     art = await resolve_reference(session, "uploads://myapp@latest")
 
     env = artifact_env("jar", art)
-    assert env["ARTIFACT_JAR_PATH"] == art.blob_path
+    assert env["ARTIFACT_JAR_PATH"] == os.path.abspath(art.blob_path)
     assert env["ARTIFACT_JAR_NAME"] == "myapp"
     assert env["ARTIFACT_JAR_VERSION"] == "v1.0.0"
     assert env["ARTIFACT_JAR_SHA256"] == art.sha256
@@ -357,7 +359,7 @@ async def test_artifact_env_reaches_the_worker(session, monkeypatch):
         session, monkeypatch, {"id": "s1", "cmd": ["echo", "hi"], "timeout": 5, "deps": []}
     )
     art = await resolve_reference(session, "uploads://myapp@v1.0.0")
-    assert env["ARTIFACT_JAR_PATH"] == art.blob_path
+    assert env["ARTIFACT_JAR_PATH"] == os.path.abspath(art.blob_path)
     assert env["ARTIFACT_JAR_VERSION"] == "v1.0.0"
 
 
@@ -375,7 +377,7 @@ async def test_step_env_cannot_override_pinned_artifact_vars(session, monkeypatc
         },
     )
     art = await resolve_reference(session, "uploads://myapp@v1.0.0")
-    assert env["ARTIFACT_JAR_PATH"] == art.blob_path  # not /tmp/evil.jar
+    assert env["ARTIFACT_JAR_PATH"] == os.path.abspath(art.blob_path)  # not /tmp/evil.jar
     assert env["HARMLESS"] == "1"  # unrelated step env still applies
 
 
@@ -408,15 +410,45 @@ def test_traversal_in_artifact_name_is_rejected():
 
 
 @pytest.mark.asyncio
-async def test_artifact_path_env_is_absolute(session):
+async def test_artifact_path_env_is_absolute_for_a_relative_blob_path(session):
     """`TASKFLOW_STORAGE_DIR` defaults to the relative `./storage`, but steps run
-    from their own cwd — a relative `_PATH` would not resolve in the subprocess,
-    making every documented `cp "$ARTIFACT_..._PATH"` recipe fail."""
-    from pathlib import Path
+    from their own cwd — a relative `_PATH` resolves to
+    `storage/runtime/storage/artifacts/...` in the subprocess and every
+    documented `cp "$ARTIFACT_..._PATH"` fails.
+
+    conftest forces an *absolute* storage dir, so asserting on a normally
+    uploaded artifact would pass with or without the fix. Use a row that
+    actually carries a relative `blob_path`.
+    """
+    import os
+
+    from app.models import Artifact
+
+    art = Artifact(
+        name="myapp",
+        version="v1.0.0",
+        ext="jar",
+        size_bytes=1,
+        sha256="ab" * 32,
+        uploader="test",
+        latest=True,
+        status="READY",
+        blob_path="storage/artifacts/ab/myapp-v1.0.0.jar",  # pre-fix shape
+        consumers=[],
+    )
+
+    path = artifact_env("jar", art)["ARTIFACT_JAR_PATH"]
+    assert os.path.isabs(path), path
+    assert path != art.blob_path  # the transform actually happened
+    assert path == os.path.abspath(art.blob_path)
+
+
+@pytest.mark.asyncio
+async def test_upload_stores_an_absolute_blob_path(session):
+    """Resolving at read time would use whatever cwd the server has then, so the
+    absolute form is written at upload."""
+    import os
 
     await _upload(session, "myapp", "v1.0.0")
     art = await resolve_reference(session, "uploads://myapp@v1.0.0")
-
-    path = artifact_env("jar", art)["ARTIFACT_JAR_PATH"]
-    assert Path(path).is_absolute(), path
-    assert Path(path).exists()
+    assert os.path.isabs(art.blob_path), art.blob_path

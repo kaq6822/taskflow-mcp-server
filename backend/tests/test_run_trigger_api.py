@@ -63,7 +63,7 @@ async def test_idempotency_key_reused_across_jobs_is_rejected(session):
     jobs is exactly that shape."""
     session.add(_job())
     other = _job()
-    other.id = "idem-job-2"
+    other.id = "other-job"
     session.add(other)
     await session.commit()
 
@@ -74,7 +74,7 @@ async def test_idempotency_key_reused_across_jobs_is_rejected(session):
                 "/api/jobs/idem-job/runs", json={"idempotency_key": "deploy-abc"}
             )
             cross = await client.post(
-                "/api/jobs/idem-job-2/runs", json={"idempotency_key": "deploy-abc"}
+                "/api/jobs/other-job/runs", json={"idempotency_key": "deploy-abc"}
             )
     finally:
         app.dependency_overrides.clear()
@@ -82,4 +82,7 @@ async def test_idempotency_key_reused_across_jobs_is_rejected(session):
     assert first.status_code == 201
     assert cross.status_code == 409, cross.text
     assert cross.json()["detail"]["error"] == "CONFLICT"
-    assert "idem-job" in cross.json()["detail"]["message"]
+    # `current_run_id` is part of the documented 409 contract, and the other
+    # job's id must not leak to a caller scoped to this one.
+    assert cross.json()["detail"]["current_run_id"] is None
+    assert "other-job" not in cross.text

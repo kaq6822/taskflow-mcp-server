@@ -97,7 +97,7 @@ curl -X POST http://localhost:8000/api/jobs \
       {"alias": "conf", "name": "myapp-config"}
     ],
     "steps": [
-      {"id": "deploy", "cmd": ["/bin/bash", "deploy.sh"], "timeout": 300, "deps": []}
+      {"id": "deploy", "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "timeout": 300, "deps": []}
     ]
   }'
 ```
@@ -154,12 +154,12 @@ Steps run with `shell=False` (`subprocess.Popen(argv)`). argv elements are never
 `cp` receives the literal string. The variables must be read **inside the program the step runs** — wrap them in a script as above, or use a program that reads the environment itself.
 
 ```json
-"cmd": ["/bin/bash", "deploy.sh"]
+"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
 ```
 
 ### ⚠️ The step command must be in the allowlist
 
-`/bin/bash` is **not** in the default allowlist. To handle artifacts from a script, add it to `backend/app/dev/allowlist.yaml` and restart the backend; otherwise saving the Job is rejected with `argv not in allowlist: /bin/bash`. Adding a command to the allowlist is your explicit consent to let the worker execute it — see [Security](./security.en.md).
+`/bin/bash` is **not** in the default allowlist. To handle artifacts from a script, add it to `backend/app/dev/allowlist.yaml` and restart the backend; otherwise saving the Job is rejected with `argv not in allowlist: /bin/bash`. **Register the script by absolute path** — a relative entry would authorise any same-named script in any directory. See [Artifact Jobs §0](./artifact-jobs.md) and [Security](./security.en.md).
 
 ### Other things to watch for
 

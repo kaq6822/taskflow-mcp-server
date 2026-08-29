@@ -266,9 +266,11 @@ def register_tools(mcp: FastMCP) -> None:
                     # replay under a different job must be rejected rather than
                     # returning that job's run.
                     if existing.job_id != job_id:
+                        # Not naming the other job: this token is scoped to
+                        # `run:<job_id>` and must not enumerate other ids.
                         raise RuntimeError(
-                            f"CONFLICT: idempotency_key {idempotency_key!r} is already "
-                            f"used by job {existing.job_id!r}"
+                            f"CONFLICT: idempotency_key {idempotency_key!r} is "
+                            f"already used by another job"
                         )
                     return _run_to_dict(existing, existing.steps)
             if engine.live_run_for(job_id):

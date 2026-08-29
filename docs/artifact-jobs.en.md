@@ -16,14 +16,14 @@ allow:
   - ["printf"]
   - ["cat"]
   - ["/usr/bin/shasum"]
-  # the examples in this document run scripts in storage/runtime by relative path
-  - ["/bin/bash", "deploy.sh"]
-  - ["/bin/bash", "verify.sh"]
-  # an absolute path pins the location too
-  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
+  # scripts by absolute path — see the warning below
+  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
 ```
 
-> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "deploy.sh"]` does not match an allowlist entry written with an absolute path. Each script needs its own entry.
+> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` does not match an allowlist entry written with an absolute path. Each script needs its own entry.
+
+> ⚠️ **Always register scripts by absolute path.** A relative entry such as `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` authorises **any `deploy.sh` anywhere on the host**: a step's `cwd` is chosen by whoever writes the Job and is not validated, so `{"cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "cwd": "/tmp/anything"}` passes. Only an absolute entry pins execution to one file.
 
 Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any invocation starting with `echo`; `["/bin/bash", "/opt/…/deploy.sh"]` allows only that script.
 
@@ -38,7 +38,7 @@ Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any 
 
 So "only scripts in this directory" cannot be expressed. List each allowed script individually.
 
-Also, because this is a **prefix** check, extra arguments after the registered elements are allowed: `["/bin/bash", "deploy.sh"]` also permits `/bin/bash deploy.sh --force`. To constrain the arguments too, include them in the entry.
+Also, because this is a **prefix** check, extra arguments after the registered elements are allowed: `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` also permits `/bin/bash deploy.sh --force`. To constrain the arguments too, include them in the entry.
 
 > **`["/bin/bash"]` and `["/bin/bash", "*"]` let any script run.** Naming the script path as the second element is the safer shape.
 
@@ -61,10 +61,10 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② Place the script** — in `storage/runtime/`, the default step working directory (or set `cwd` to use another location).
+**② Place the script** — at the absolute path you allowlisted. That is separate from the step's working directory (`storage/runtime` by default): the script is executed from `/opt/taskflow/scripts/`, and files it creates land in the working directory.
 
 ```bash
-# storage/runtime/deploy.sh
+# /opt/taskflow/scripts/deploy.sh
 #!/usr/bin/env bash
 set -euo pipefail
 cp "$ARTIFACT_JAR_PATH" ./app.jar     # the original is 0444, so copy it
@@ -83,7 +83,7 @@ echo "DEPLOY_OK"
   "steps": [
     {
       "id": "deploy",
-      "cmd": ["/bin/bash", "deploy.sh"],
+      "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],
       "timeout": 300,
       "deps": [],
       "success_contains": ["DEPLOY_OK"]
@@ -106,7 +106,7 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 | Step | Check | If missed |
 |---|---|---|
 | ① allowlist | Command is in `allowlist.yaml` and the backend was restarted | `400 argv not in allowlist` on save |
-| ② script location | Lives in `storage/runtime/`, or the step sets `cwd` | `exit 127 executable not found` / `126 cwd not found` |
+| ② script location | The file really exists at the absolute path you allowlisted | `exit 127 executable not found` |
 | ③ alias declared | The alias is in `consumes_artifacts` | `ARTIFACT_*` is never injected (silently empty) |
 | ④ cmd | Variables are read **inside** the program | `$ARTIFACT_...` passed as a literal string |
 | ⑤ verdict | Is the exit code enough to judge success? | Failures reported as success |
@@ -121,9 +121,9 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 
 ```json
 "steps": [
-  {"id": "verify",  "cmd": ["/bin/bash", "verify.sh"],  "timeout": 60,  "deps": []},
-  {"id": "deploy",  "cmd": ["/bin/bash", "deploy.sh"],  "timeout": 300, "deps": ["verify"]},
-  {"id": "health",  "cmd": ["/bin/bash", "health.sh"],  "timeout": 60,  "deps": ["deploy"]}
+  {"id": "verify",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/verify.sh"],  "timeout": 60,  "deps": []},
+  {"id": "deploy",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],  "timeout": 300, "deps": ["verify"]},
+  {"id": "health",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/health.sh"],  "timeout": 60,  "deps": ["deploy"]}
 ]
 ```
 
@@ -136,7 +136,7 @@ Once an earlier step fails the run, **every later step becomes `SKIPPED`**.
 `ARTIFACT_<ALIAS>_SHA256` is the digest computed at upload. You can compare it against the file before deploying.
 
 ```bash
-# storage/runtime/verify.sh
+# /opt/taskflow/scripts/verify.sh
 #!/usr/bin/env bash
 set -euo pipefail
 actual=$(shasum -a 256 "$ARTIFACT_JAR_PATH" | cut -d' ' -f1)
@@ -154,7 +154,7 @@ When the exit code is not enough, use `success_contains` (text that must appear)
 ```json
 {
   "id": "deploy",
-  "cmd": ["/bin/bash", "deploy.sh"],
+  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],
   "timeout": 300,
   "deps": [],
   "success_contains": ["DEPLOY_OK"],
@@ -190,8 +190,8 @@ Retry a flaky fetch while keeping the deployment itself fail-stop:
 
 ```json
 "steps": [
-  {"id": "fetch",  "cmd": ["/bin/bash", "fetch.sh"],  "timeout": 60,  "deps": [], "on_failure": "RETRY"},
-  {"id": "deploy", "cmd": ["/bin/bash", "deploy.sh"], "timeout": 300, "deps": ["fetch"], "on_failure": "STOP"}
+  {"id": "fetch",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"],  "timeout": 60,  "deps": [], "on_failure": "RETRY"},
+  {"id": "deploy", "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"], "timeout": 300, "deps": ["fetch"], "on_failure": "STOP"}
 ]
 ```
 
@@ -210,8 +210,8 @@ An alias is the name the step sees, so naming it after the **role** rather than 
     {"alias": "migration", "name": "myapp-db-migration"}
   ],
   "steps": [
-    {"id": "migrate", "cmd": ["/bin/bash", "migrate.sh"], "timeout": 600, "deps": []},
-    {"id": "deploy",  "cmd": ["/bin/bash", "deploy.sh"],  "timeout": 300, "deps": ["migrate"]}
+    {"id": "migrate", "cmd": ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"], "timeout": 600, "deps": []},
+    {"id": "deploy",  "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"],  "timeout": 300, "deps": ["migrate"]}
   ]
 }
 ```

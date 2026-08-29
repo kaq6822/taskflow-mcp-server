@@ -139,7 +139,11 @@ async def _finalise(
         uploader=uploader,
         latest=True,
         status="READY",  # MVP: ClamAV stub 즉시 통과
-        blob_path=str(final_path),
+        # Absolute at write time: `artifacts_dir` may be relative (the default
+        # is `./storage/artifacts`), and resolving later would use whatever cwd
+        # the server happens to have then — a different one on the next start
+        # would point every older row at a path that never existed.
+        blob_path=os.path.abspath(final_path),
         consumers=[],
     )
     session.add(art)
@@ -233,11 +237,11 @@ async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
 def artifact_env(alias: str, art: Artifact) -> dict[str, str]:
     """Environment variables handed to every step of a run consuming `art`.
 
-    `_PATH` is made absolute. `blob_path` is stored exactly as
-    `settings.artifacts_dir` was configured, and that defaults to the relative
-    `./storage/artifacts`; steps run from their own cwd (`storage/runtime` by
-    default), where such a path does not resolve. Handing the subprocess a
-    relative path makes every artifact unreadable under the shipped defaults.
+    `_PATH` is always absolute. `_finalise` now stores an absolute
+    `blob_path`, so this is a no-op for anything uploaded since; it still
+    normalises rows written earlier, when the path was stored exactly as
+    `settings.artifacts_dir` was configured (the default `./storage/artifacts`
+    is relative, and steps run from their own cwd where that cannot resolve).
 
     `abspath`, not `resolve()`: an already-absolute path must survive unchanged,
     and resolving symlinks would rewrite it (macOS `/var` → `/private/var`).

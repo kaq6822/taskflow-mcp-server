@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +18,28 @@ from app.services.artifacts import ArtifactResolutionError
 from app.services.audit import append_event
 
 router = APIRouter(prefix="/api", tags=["runs"])
+
+def _replay_or_conflict(existing: Run, job_id: str, key: str | None) -> None:
+    """Raise unless `existing` is this job's own run for `key`.
+
+    `Run.idempotency_key` is unique table-wide, so a key can already belong to a
+    different job. Returning that run would answer 201 for a deploy that never
+    ran, and it cannot be inserted either. `current_run_id` is null rather than
+    the other job's run id: the 409 contract (docs/03-system-spec.md §2.5) says
+    the field is present, but the caller is only scoped to `job_id` and must not
+    learn another job's ids from a probe.
+    """
+    if existing.job_id == job_id:
+        return
+    raise HTTPException(
+        409,
+        detail={
+            "error": "CONFLICT",
+            "current_run_id": None,
+            "message": f"idempotency_key {key!r} is already used by another job",
+        },
+    )
+
 
 # docs/03-system-spec.md §123 error vocabulary → HTTP status.
 _ARTIFACT_ERROR_STATUS = {
@@ -116,21 +139,7 @@ async def start_run(
             )
         ).scalar_one_or_none()
         if existing is not None:
-            # The key is unique across the whole table, so it can belong to a
-            # different job. Replaying it there must not hand back that job's
-            # run (a 201 for a deploy that never happened), and it cannot be
-            # inserted either — say so instead of failing on the constraint.
-            if existing.job_id != job_id:
-                raise HTTPException(
-                    409,
-                    detail={
-                        "error": "CONFLICT",
-                        "message": (
-                            f"idempotency_key {body.idempotency_key!r} is already "
-                            f"used by job {existing.job_id!r}"
-                        ),
-                    },
-                )
+            _replay_or_conflict(existing, job_id, body.idempotency_key)
             return existing
 
     engine = get_engine()
@@ -162,6 +171,22 @@ async def start_run(
             _ARTIFACT_ERROR_STATUS.get(e.code, 400),
             detail={"error": e.code, "message": e.message},
         )
+    except IntegrityError:
+        # The lookup above and this insert are not atomic, and the key is unique
+        # table-wide: a concurrent trigger for another job can claim it in
+        # between. Re-read and answer as the lookup would have.
+        await session.rollback()
+        winner = (
+            await session.execute(
+                select(Run)
+                .options(selectinload(Run.steps))
+                .where(Run.idempotency_key == body.idempotency_key)
+            )
+        ).scalar_one_or_none()
+        if winner is None:
+            raise
+        _replay_or_conflict(winner, job_id, body.idempotency_key)
+        return winner
     await append_event(
         session,
         who=actor,
