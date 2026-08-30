@@ -29,7 +29,7 @@ async def test_tampering_breaks_chain(session):
         await append_event(session, who=f"a{i}", kind="k", target="t", src="web", result="OK")
     await session.commit()
     # Tamper row 2: change the `who` field without recomputing hash
-    from sqlalchemy import select, update
+    from sqlalchemy import update
 
     from app.models import AuditEvent
 
