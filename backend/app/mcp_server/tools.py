@@ -6,6 +6,7 @@ import binascii
 
 from mcp.server.fastmcp import Context, FastMCP
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -17,6 +18,7 @@ from app.models import Artifact, Job, Run, RunStep
 from app.services.artifacts import (
     ArtifactResolutionError,
     ArtifactValidationError,
+    latest_stmt,
     save_upload_bytes,
 )
 from app.services.audit import append_event
@@ -211,13 +213,9 @@ def register_tools(mcp: FastMCP) -> None:
         await _require(ctx, "read:jobs", target=f"{name}@{version}")
         async with SessionLocal() as s:
             if version == "latest":
-                row = (
-                    await s.execute(
-                        select(Artifact)
-                        .where(Artifact.name == name, Artifact.latest)
-                        .limit(1)
-                    )
-                ).scalar_one_or_none()
+                # Same statement `resolve_reference` uses, so a status check and
+                # the version a run pins cannot disagree.
+                row = (await s.execute(latest_stmt(name).limit(1))).scalar_one_or_none()
             else:
                 row = (
                     await s.execute(
@@ -264,7 +262,17 @@ def register_tools(mcp: FastMCP) -> None:
                         .where(Run.idempotency_key == idempotency_key)
                     )
                 ).scalar_one_or_none()
-                if existing:
+                if existing is not None:
+                    # See the REST handler: the key is unique table-wide, so a
+                    # replay under a different job must be rejected rather than
+                    # returning that job's run.
+                    if existing.job_id != job_id:
+                        # Not naming the other job: this token is scoped to
+                        # `run:<job_id>` and must not enumerate other ids.
+                        raise RuntimeError(
+                            f"CONFLICT: idempotency_key {idempotency_key!r} is "
+                            f"already used by another job"
+                        )
                     return _run_to_dict(existing, existing.steps)
             if engine.live_run_for(job_id):
                 raise RuntimeError(
@@ -279,6 +287,26 @@ def register_tools(mcp: FastMCP) -> None:
                     artifact_refs=artifact_refs,
                     idempotency_key=idempotency_key,
                 )
+            except IntegrityError:
+                # Same non-atomic check-then-insert as the REST handler.
+                if not idempotency_key:
+                    raise
+                await s.rollback()
+                winner = (
+                    await s.execute(
+                        select(Run)
+                        .options(selectinload(Run.steps))
+                        .where(Run.idempotency_key == idempotency_key)
+                    )
+                ).scalar_one_or_none()
+                if winner is None:
+                    raise
+                if winner.job_id != job_id:
+                    raise RuntimeError(
+                        f"CONFLICT: idempotency_key {idempotency_key!r} is "
+                        f"already used by another job"
+                    )
+                return _run_to_dict(winner, winner.steps)
             except ArtifactResolutionError as e:
                 await append_event(
                     s,

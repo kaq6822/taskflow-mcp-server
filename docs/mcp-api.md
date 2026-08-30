@@ -141,6 +141,7 @@ curl -X POST http://localhost:7391/mcp \
 ## 6. Idempotency
 
 `run_job` 호출에 `idempotency_key`를 전달하면 동일 키로 재호출 시 **기존 run_id를 반환**합니다 (DB의 `Run.idempotency_key` unique index).
+키는 테이블 전체에서 유일하므로 **Job마다 다른 키를 써야 합니다.** 다른 Job에서 같은 키를 재사용하면 그 Job의 run이 반환되는 대신 `CONFLICT`로 거부됩니다.
 
 ## 7. Claude Desktop 연결
 

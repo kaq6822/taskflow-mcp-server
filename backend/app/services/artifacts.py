@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 
@@ -138,7 +139,11 @@ async def _finalise(
         uploader=uploader,
         latest=True,
         status="READY",  # MVP: ClamAV stub 즉시 통과
-        blob_path=str(final_path),
+        # Absolute at write time: `artifacts_dir` may be relative (the default
+        # is `./storage/artifacts`), and resolving later would use whatever cwd
+        # the server happens to have then — a different one on the next start
+        # would point every older row at a path that never existed.
+        blob_path=os.path.abspath(final_path),
         consumers=[],
     )
     session.add(art)
@@ -192,6 +197,21 @@ def make_reference(name: str, version: str) -> str:
     return f"{_REF_SCHEME}{name}@{version}"
 
 
+def latest_stmt(name: str):
+    """Query for `name`'s `latest` row, with a deterministic tie-break.
+
+    `latest` is a flag maintained by `_finalise`, not a unique constraint (only
+    `(name, version)` is unique), so concurrent uploads can leave two rows
+    flagged. Every reader must break the tie identically — otherwise a status
+    check and the version a run actually pins can disagree.
+    """
+    return (
+        select(Artifact)
+        .where(Artifact.name == name, Artifact.latest)
+        .order_by(Artifact.uploaded_at.desc(), Artifact.id.desc())
+    )
+
+
 async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
     """Resolve a `uploads://` reference to a READY artifact row.
 
@@ -201,14 +221,7 @@ async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
     """
     name, version = parse_reference(ref)
     if version == "latest":
-        # `latest` is a flag maintained by `_finalise`, not a unique constraint
-        # (only `(name, version)` is unique), so concurrent uploads can leave two
-        # rows flagged. Order explicitly rather than letting the DB pick.
-        q = (
-            select(Artifact)
-            .where(Artifact.name == name, Artifact.latest)
-            .order_by(Artifact.uploaded_at.desc(), Artifact.id.desc())
-        )
+        q = latest_stmt(name)
     else:
         q = select(Artifact).where(Artifact.name == name, Artifact.version == version)
     row = (await session.execute(q.limit(1))).scalar_one_or_none()
@@ -222,10 +235,20 @@ async def resolve_reference(session: AsyncSession, ref: str) -> Artifact:
 
 
 def artifact_env(alias: str, art: Artifact) -> dict[str, str]:
-    """Environment variables handed to every step of a run consuming `art`."""
+    """Environment variables handed to every step of a run consuming `art`.
+
+    `_PATH` is always absolute. `_finalise` now stores an absolute
+    `blob_path`, so this is a no-op for anything uploaded since; it still
+    normalises rows written earlier, when the path was stored exactly as
+    `settings.artifacts_dir` was configured (the default `./storage/artifacts`
+    is relative, and steps run from their own cwd where that cannot resolve).
+
+    `abspath`, not `resolve()`: an already-absolute path must survive unchanged,
+    and resolving symlinks would rewrite it (macOS `/var` → `/private/var`).
+    """
     p = f"ARTIFACT_{alias.upper()}"
     return {
-        f"{p}_PATH": art.blob_path,
+        f"{p}_PATH": os.path.abspath(art.blob_path),
         f"{p}_NAME": art.name,
         f"{p}_VERSION": art.version,
         f"{p}_SHA256": art.sha256,

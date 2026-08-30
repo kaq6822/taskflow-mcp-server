@@ -60,6 +60,8 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 | Document | Contents |
 |---|---|
 | [Getting Started](./docs/getting-started.en.md) | Installation · First job · argv allowlist |
+| [Artifacts](./docs/artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
+| [Artifact Jobs](./docs/artifact-jobs.en.md) | Authoring Jobs that use artifacts · allowlist · verdicts/failure handling · anti-patterns |
 | [MCP API](./docs/mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [REST API](./docs/rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [Operations](./docs/operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |
