@@ -16,9 +16,12 @@ allow:
   - ["printf"]
   - ["cat"]
   - ["/usr/bin/shasum"]
-  # 스크립트는 절대 경로로 — 아래 경고 참고
+  # 스크립트는 절대 경로로 — 아래 경고 참고. 이 문서 예제에 나오는 것들이다
   - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
   - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/health.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
 ```
 
 > **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "deploy.sh"]`인데 allowlist에는 `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.

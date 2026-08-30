@@ -16,9 +16,12 @@ allow:
   - ["printf"]
   - ["cat"]
   - ["/usr/bin/shasum"]
-  # scripts by absolute path — see the warning below
+  # scripts by absolute path — see the warning below. These are the ones this document uses
   - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
   - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/health.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"]
+  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
 ```
 
 > **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "deploy.sh"]` does not match an entry written as `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`. Each script needs its own entry.
