@@ -7,7 +7,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.api import artifacts as artifacts_api
@@ -28,7 +27,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     ensure_storage_dirs()
-    async with SessionLocal() as session:  # type: AsyncSession
+    async with SessionLocal() as session:
         token = await ensure_admin_session(session)
         if token:
             print("=" * 60)
