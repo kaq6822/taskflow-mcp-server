@@ -75,7 +75,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 make test
 ```
 
-pytest — 16 test cases:
+pytest — 82 test cases; the main ones:
 
 - `test_audit_chain.py` — 10-event chain intact, 1 row tampering detected
 - `test_dag.py` — topo sort, cycle detection, duplicate id/shell string rejection

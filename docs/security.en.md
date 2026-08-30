@@ -1,6 +1,10 @@
 # Security Model
 
-TaskFlow is designed with the premise that AI Agents can execute arbitrary commands. There is no restriction on which commands a step may run — **anyone who can create or edit a Job can run arbitrary commands on the server**, subject only to the controls below. Treat Job write access (the `write:jobs`-class MCP scope, and UI/REST access) the same way you would treat shell access to the host, and use the audit log to know who did what.
+TaskFlow is designed with the premise that AI Agents can execute arbitrary commands. There is no restriction on which commands a step may run — **anyone who can create or edit a Job can run arbitrary commands on the server.**
+
+> ⚠️ **The Job create/edit REST API is currently unauthenticated.** Anyone who can reach `/api/jobs` can create and run a Job, so the only real barrier is **network access control**. MCP Key scopes apply solely to the MCP surface (`run:<job-id>` to run, `read:*` to read, `write:uploads` to upload) and **do not govern Job authoring** — MCP exposes no Job-creation tool at all. Do not expose the backend on an untrusted network.
+
+Instead of restricting which commands may run, TaskFlow narrows the execution environment with the enforced policies below and records every action in the hash-chained audit log so it can be traced after the fact.
 
 ## Enforced Policies
 
@@ -72,6 +76,8 @@ The following are outside the current security model scope:
 - Container/namespace isolation — process isolation is currently limited to cwd control
 - SIEM forward — only local audit table (`GET /api/audit/export.csv`)
 - ClamAV real integration — currently stub (upload immediately READY)
+- **REST API authentication** — no `/api/*` route has an auth dependency. `bootstrap.py` mints an admin session token, but nothing verifies it.
+- **Dedicated low-privilege account / no-root execution** — `STEP_USER` in `policies.py` has no readers, and the worker passes no `user=` or uid drop to `subprocess.Popen`. Steps run as whatever account started the backend.
 
 ## Related
 

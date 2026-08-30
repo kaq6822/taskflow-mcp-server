@@ -42,8 +42,11 @@ migrate:
 	cd backend && ../$(ALEMBIC) upgrade head
 
 # ---- Dev (loopback) ------------------------------------------------------
-# Three processes, each bound to 127.0.0.1 unless FRONTEND_HOST/API_HOST is
-# overridden. Intended for a single developer on localhost.
+# Three processes. The frontend binds to FRONTEND_HOST (localhost by default);
+# the backend and MCP default to 0.0.0.0, so they ARE reachable from the network
+# even here — pass API_HOST=127.0.0.1 MCP_HOST=127.0.0.1 to keep them loopback-only.
+# There is no auth on /api/*, so treat any non-loopback binding as public access
+# to arbitrary command execution (see docs/security.md).
 dev:
 	@echo "dev → backend $(API_HOST):$(API_PORT) · mcp $(MCP_HOST):$(MCP_PORT) · frontend $(FRONTEND_HOST):$(FRONTEND_PORT)"
 	@trap 'kill 0' INT TERM EXIT; \

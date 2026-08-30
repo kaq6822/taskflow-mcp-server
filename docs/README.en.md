@@ -9,7 +9,7 @@ This folder contains two types of documents:
 
 | Document | Contents |
 |---|---|
-| [getting-started.en.md](./getting-started.en.md) | Installation · First job |
+| [getting-started.en.md](./getting-started.en.md) | Installation · First job · Step working directory (`cwd`) |
 | [artifacts.en.md](./artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
 | [artifact-jobs.en.md](./artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
 | [mcp-api.en.md](./mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |

@@ -88,7 +88,7 @@ TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173 \
 - `TASKFLOW_API_HOST_PUBLIC` — 브라우저/외부 클라이언트가 API에 접근할 때 쓰는 호스트 (Vite proxy target 구성용)
 - `TASKFLOW_CORS_ORIGINS` — **콤마 구분** origin 화이트리스트. 원격 브라우저가 `/api`를 직접 호출할 때 반드시 포함. Vite 프록시 경유 호출은 same-origin이라 CORS 영향 없음. dev에서 `*` 한 개만 넣으면 allow-all.
 
-> ⚠️ UI에는 현재 로그인 게이트가 없습니다. `dev-lan`으로 외부 노출 시 누구나 Job 생성/실행이 가능하므로 신뢰된 네트워크에서만 사용하세요.
+> ⚠️ UI에는 현재 로그인 게이트가 없고, `/api/*` 라우트에도 인증이 없습니다. 외부에 노출하면 누구나 Job을 만들고 실행할 수 있으며, step의 `cmd`에 실행 가능한 명령 제한이 없으므로([Security](./security.md) 참고) 이는 곧 **서버에서 임의 명령을 실행할 수 있다**는 뜻입니다. 신뢰된 네트워크에서만 사용하세요.
 
 ## 프로덕션 릴리즈
 
@@ -133,7 +133,7 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | 아티팩트·로그 루트 |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step `cwd` 미지정 시 사용할 기본 subprocess cwd |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩 |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `127.0.0.1` 지정 |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | `run_job(sync)` 최대 대기 |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite 바인딩 |

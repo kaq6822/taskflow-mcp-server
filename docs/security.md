@@ -1,8 +1,10 @@
 # Security Model
 
-TaskFlow는 AI Agent가 임의의 커맨드를 실행할 수 있다는 점을 전제로 설계되었습니다. step의 `cmd`에는 argv 형식(리스트)이기만 하면 어떤 명령이든 등록할 수 있고, 사전 등록이나 백엔드 재시작 없이 즉시 실행됩니다. 즉 **Job 편집 권한은 서버에서 임의 명령을 실행할 수 있는 권한과 동일**합니다.
+TaskFlow는 AI Agent가 임의의 커맨드를 실행할 수 있다는 점을 전제로 설계되었습니다. step의 `cmd`에는 argv 형식(리스트)이기만 하면 어떤 명령이든 등록할 수 있고, 사전 등록이나 백엔드 재시작 없이 즉시 실행됩니다. 즉 **Job을 만들거나 편집할 수 있다면 서버에서 임의 명령을 실행할 수 있습니다.**
 
-실행 가능한 명령 자체를 제한하지 않는 대신, TaskFlow는 실행 환경과 권한 체계를 **강제되는 정책**으로 좁혀 사고 범위를 통제합니다. "누가 Job을 만들고 실행할 수 있는가"를 MCP Key의 Scope(`run:<job-id>` 등)로 좁히고, 실행된 모든 행위를 hash-chained audit 로그에 남겨 사후 추적 가능하게 합니다. 신뢰하지 않는 주체에게는 Job 작성/편집 권한 자체를 주지 않는 것이 유일한 사전 차단선입니다.
+> ⚠️ **Job 생성·편집 REST API에는 현재 인증이 없습니다.** `/api/jobs`에 도달할 수 있는 주체는 누구나 Job을 만들고 실행할 수 있으므로, 실질적인 사전 차단선은 **네트워크 접근 제어 하나뿐**입니다. MCP Key의 Scope는 MCP 경로(실행 `run:<job-id>`, 조회 `read:*`, 업로드 `write:uploads`)에만 적용되며 **Job 작성·편집에는 관여하지 않습니다** — MCP에는 Job을 만드는 도구 자체가 없습니다. 백엔드를 신뢰할 수 없는 네트워크에 노출하지 마세요.
+
+실행 가능한 명령을 제한하지 않는 대신, TaskFlow는 실행 환경을 아래의 **강제되는 정책**으로 좁히고 실행된 모든 행위를 hash-chained audit 로그에 남겨 사후 추적 가능하게 합니다.
 
 ## 강제 정책
 
@@ -74,6 +76,8 @@ curl http://localhost:8000/api/audit/verify
 - 컨테이너/namespace 격리 — 현재 프로세스 격리는 cwd 제어 수준
 - SIEM forward — 로컬 audit 테이블만 제공 (`GET /api/audit/export.csv`)
 - ClamAV 실제 연동 — 현재 stub (업로드 즉시 READY)
+- **REST API 인증** — `/api/*` 라우트에는 인증 의존성이 없습니다. `bootstrap.py`가 admin 세션 토큰을 발급하지만 검증하는 경로가 없습니다.
+- **전용 저권한 계정 / no-root 실행** — `policies.py`의 `STEP_USER` 상수는 참조되지 않으며, worker는 `subprocess.Popen`에 `user=`나 uid drop을 넘기지 않습니다. Step은 백엔드를 실행한 계정 권한 그대로 동작합니다.
 
 ## 관련 문서
 

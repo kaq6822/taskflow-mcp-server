@@ -14,6 +14,7 @@ from app.engine.dag import topo_sort
 from app.engine.log_bus import log_bus
 from app.engine.policies import (
     PolicyError,
+    check_argv_shape,
     check_forbidden_state_command,
     filter_env,
 )
@@ -606,6 +607,7 @@ class RunEngine:
 
         # Policy re-check (defense in depth)
         try:
+            check_argv_shape(cmd)
             check_forbidden_state_command(cmd)
         except PolicyError as e:
             with log_path.open("ab") as f:

@@ -249,13 +249,7 @@ function OverviewTab({
               <span className="chip ok">shell=False</span> {t.argv_only}
             </div>
             <div>
-              <span className="chip">user=taskflow</span>
-            </div>
-            <div>
               <span className="chip">cwd</span>
-            </div>
-            <div>
-              <span className="chip warn">no-root</span>
             </div>
           </div>
         </div>

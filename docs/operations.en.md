@@ -133,7 +133,7 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | Artifact/log root |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Default subprocess cwd when a step does not set `cwd` |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding. **Defaults to every interface, and `/api/*` has no auth** — set `127.0.0.1` to keep it loopback-only |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | Max wait for `run_job(sync)` |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite binding |

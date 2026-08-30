@@ -77,7 +77,7 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 make test
 ```
 
-pytest 16개 케이스:
+pytest 82개 케이스 — 주요 항목:
 
 - `test_audit_chain.py` — 10개 이벤트 체인 intact, 1 row 위변조 탐지
 - `test_dag.py` — topo sort, 비순환 검증, 중복 id/shell 문자열 거부
