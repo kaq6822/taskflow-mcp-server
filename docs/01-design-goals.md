@@ -31,7 +31,7 @@ Agent는 제품의 1등 사용자지만, **어떤 Agent도 기본적으로 신�
 
 - 모든 MCP 호출은 scope 기반으로 **화이트리스트 방식** 권한 검사.
 - Rate-limit을 key 단위로 강제.
-- Step 실행은 `shell=False` · argv allowlist · `no-root` · 전용 계정으로 고정.
+- Step 실행은 `shell=False` · `no-root` · 전용 계정으로 고정. 실행 가능한 명령 자체는 제한하지 않으며, Job 작성 권한을 scope로 좁히는 것이 통제 지점이다.
 - Agent 행위는 전부 `src=mcp` 로 tagging되어 감사 로그에 기록.
 
 ### 3.2 Deterministic, Not Magical

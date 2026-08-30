@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 7391
     mcp_max_sync_sec: int = 600
-    allowlist_path: Path = Path("./app/dev/allowlist.yaml")
 
     # Frontend dev server knobs — consumed by the Makefile + vite.config.ts
     # via explicit flags. These are declared here so a single .env controls

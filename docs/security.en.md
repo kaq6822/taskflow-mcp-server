@@ -1,41 +1,14 @@
 # Security Model
 
-TaskFlow is designed with the premise that AI Agents can execute arbitrary commands, and uses **enforced policies** to prevent accidents before they happen.
+TaskFlow is designed with the premise that AI Agents can execute arbitrary commands. There is no restriction on which commands a step may run — **anyone who can create or edit a Job can run arbitrary commands on the server**, subject only to the controls below. Treat Job write access (the `write:jobs`-class MCP scope, and UI/REST access) the same way you would treat shell access to the host, and use the audit log to know who did what.
 
 ## Enforced Policies
 
 ### 1. `shell=False`
 
-Step execution is exclusively via `asyncio.create_subprocess_exec(*argv)`. There is no shell string execution path anywhere in the codebase. If argv is not a list, it is rejected at the DAG parsing stage.
+Step execution is exclusively via `asyncio.create_subprocess_exec(*argv)`. There is no shell string execution path anywhere in the codebase — a step's `cmd` must be a non-empty list of strings (argv form), never a shell string. If argv is not a list, it is rejected at the DAG parsing stage. This blocks shell metacharacter tricks (`;`, `|`, `&&`, backticks, etc.), but it does **not** restrict which program is invoked.
 
-### 2. argv Allowlist
-
-Only argv prefixes listed in the local allowlist (`backend/app/dev/allowlist.yaml` — the **per-environment copy**, `.gitignore`d) can be executed. Mismatches produce a `policy.violation` audit entry + DENY. The shared template is `backend/app/dev/allowlist.example.yaml`; `make setup` seeds the local copy on first install. In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file.
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["sleep"]
-  - ["ls"]
-  - ["cat"]
-  - ["/bin/true"]
-  - ["/bin/false"]
-  # + /bin/*, /usr/bin/* variants
-```
-
-To add commands:
-
-```yaml
-allow:
-  - ["npm", "ci"]
-  - ["npm", "run", "build"]
-  - ["aws", "s3", "sync"]
-```
-
-Prefix matching: `["npm", "ci"]` allows `npm ci --silent` but denies `npm install`.
-
-### 3. Controlled cwd
+### 2. Controlled cwd
 
 Steps run from `./storage/runtime` by default. This default can be overridden with `TASKFLOW_STEP_CWD`.
 
@@ -52,7 +25,7 @@ If a job author needs a specific working directory for a step, use the step-leve
 
 An explicit `cwd` is rejected if empty. At execution time, if it does not exist or is not a directory, the step ends as `FAILED`. `cd`, `pushd`, and `popd` cannot be used as step commands. Directory changes are shell/process state and do not carry over to later steps, so they must be represented with `cwd`.
 
-### 4. Secret Environment Variable Masking
+### 3. Secret Environment Variable Masking
 
 Environment variables with a `SECRET_*` prefix are:
 
@@ -61,7 +34,7 @@ Environment variables with a `SECRET_*` prefix are:
 
 The variable name itself appears in the audit trail, but the value is never stored in the DB or logs.
 
-### 5. Hash-chained Audit
+### 4. Hash-chained Audit
 
 ![Audit Log screen](./assets/04-audit.png)
 
@@ -74,7 +47,7 @@ curl http://localhost:8000/api/audit/verify
 
 Returns `{"ok": false, "broken_at": N}` if tampering is detected. See [Troubleshooting](./troubleshooting.en.md) for response steps.
 
-### 6. MCP Key Protection
+### 5. MCP Key Protection
 
 - Only a **hash** is stored in the DB. Plaintext is included in the response only once at issuance.
 - Scope matching + token bucket rate-limit (`60/min`, etc.).
@@ -83,13 +56,13 @@ Returns `{"ok": false, "broken_at": N}` if tampering is detected. See [Troublesh
 
 For scope rules, see [MCP API §2](./mcp-api.en.md#2-scope-rules).
 
-## Why Policies Cannot Be Bypassed
+## Why the Remaining Policies Cannot Be Bypassed
 
 - **At job creation (UI/REST)** — DAG parser validates argv and `cwd` format + rejects shell strings / state-changing commands
-- **At run start** — `policies.py` re-validates the allowlist and state-changing commands
+- **At run start** — `policies.py` re-validates state-changing commands (`cd`/`pushd`/`popd`)
 - **At subprocess time** — `create_subprocess_exec` does not perform shell interpretation (direct execve)
 
-Failure at any of the three points produces a `policy.violation` audit entry + run FAILED.
+Failure at any of the three points produces a `policy.violation` audit entry + run FAILED. None of this checks *which* program is being run — only that it is expressed as argv and does not try to change directory out from under the worker.
 
 ## Out of Scope (Currently Not Implemented)
 
@@ -102,6 +75,6 @@ The following are outside the current security model scope:
 
 ## Related
 
-- Policy implementation details → `backend/app/engine/policies.py`, `backend/app/dev/allowlist.example.yaml` (template), `backend/app/dev/allowlist.yaml` (per-environment local copy)
+- Policy implementation details → `backend/app/engine/policies.py`
 - Audit event types → [02-business-rules.md](./02-business-rules.md)
 - MCP Key scope matching → [MCP API](./mcp-api.en.md)

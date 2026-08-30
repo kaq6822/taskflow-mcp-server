@@ -13,8 +13,7 @@ from app.db import SessionLocal
 from app.engine.dag import topo_sort
 from app.engine.log_bus import log_bus
 from app.engine.policies import (
-    AllowlistError,
-    check_allowlist,
+    PolicyError,
     check_forbidden_state_command,
     filter_env,
 )
@@ -605,11 +604,10 @@ class RunEngine:
         log_path = settings.logs_dir / str(run_id) / f"{sid}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Allowlist re-check (defense in depth)
+        # Policy re-check (defense in depth)
         try:
             check_forbidden_state_command(cmd)
-            check_allowlist(cmd)
-        except AllowlistError as e:
+        except PolicyError as e:
             with log_path.open("ab") as f:
                 f.write(("$ " + " ".join(cmd) + "\n").encode())
                 f.write((f"DENY: {e}\n").encode())

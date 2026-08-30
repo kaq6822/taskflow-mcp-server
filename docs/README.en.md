@@ -9,13 +9,13 @@ This folder contains two types of documents:
 
 | Document | Contents |
 |---|---|
-| [getting-started.en.md](./getting-started.en.md) | Installation · First job · argv allowlist |
+| [getting-started.en.md](./getting-started.en.md) | Installation · First job |
 | [artifacts.en.md](./artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
-| [artifact-jobs.en.md](./artifact-jobs.en.md) | Authoring Jobs that use artifacts · allowlist · verdicts/failure handling · anti-patterns |
+| [artifact-jobs.en.md](./artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
 | [mcp-api.en.md](./mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [rest-api.en.md](./rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [operations.en.md](./operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |
-| [security.en.md](./security.en.md) | `shell=False` · allowlist · Secret masking · hash-chained audit |
+| [security.en.md](./security.en.md) | `shell=False` · Secret masking · hash-chained audit |
 | [troubleshooting.en.md](./troubleshooting.en.md) | Common symptoms and solutions |
 
 ## Design Documents

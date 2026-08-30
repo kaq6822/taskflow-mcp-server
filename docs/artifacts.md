@@ -157,9 +157,9 @@ step은 `shell=False`로 실행된다(`subprocess.Popen(argv)`). argv 원소는 
 "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
 ```
 
-### ⚠️ step 명령은 allowlist에 있어야 한다
+### ⚠️ 스크립트는 절대 경로로 등록한다
 
-`/bin/bash`는 기본 allowlist에 **없다.** 스크립트로 아티팩트를 다루려면 `backend/app/dev/allowlist.yaml`에 추가하고 백엔드를 재시작해야 하며, 그렇지 않으면 Job 저장 시 `argv not in allowlist: /bin/bash`로 거부된다. 이때 **스크립트는 절대 경로로 등록해야 한다** — 상대 경로로 등록하면 임의 디렉터리의 동명 스크립트가 실행될 수 있다. 자세한 내용은 [Artifact Jobs §0](./artifact-jobs.md)과 [Security](./security.md) 참고.
+step의 `cmd`에 적는 명령에는 별도 등록 절차가 없다 — argv 형식으로 적으면 그대로 실행된다. 다만 **스크립트는 절대 경로로 등록해야 한다** — `["/bin/bash", "deploy.sh"]`처럼 상대 경로로 등록하면 step의 `cwd`에 따라 임의 디렉터리의 동명 스크립트가 실행될 수 있다. 자세한 내용은 [Artifact Jobs §3.6](./artifact-jobs.md#36-작업-디렉터리--cwd)과 [Security](./security.md) 참고.
 
 ### 그 외 주의할 점
 
@@ -269,4 +269,4 @@ Job의 `consumes_artifacts`에 alias가 선언돼 있는지 확인한다. 업로
 - [Getting Started](./getting-started.md) — 설치와 첫 Job 만들기
 - [REST API](./rest-api.md) — 엔드포인트 전체 목록
 - [MCP API](./mcp-api.md) — Agent 도구와 scope
-- [Security](./security.md) — allowlist, 시크릿 마스킹, 감사 로그
+- [Security](./security.md) — 정책 설계, 시크릿 마스킹, 감사 로그

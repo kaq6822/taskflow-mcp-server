@@ -53,19 +53,6 @@ Scope 매칭 규칙은 [MCP API §2](./mcp-api.md#2-scope-규칙).
 
 ## 실행
 
-### allowlist에 없는 커맨드로 Job 실행이 즉시 `policy.violation`
-
-의도된 동작입니다. 환경별 로컬 사본 `backend/app/dev/allowlist.yaml`(템플릿 아님)에 argv 프리픽스를 추가하고 backend를 재시작하세요. 사본이 없다면 `make bootstrap-allowlist`로 템플릿(`backend/app/dev/allowlist.example.yaml`)에서 복사합니다. 프로덕션에서는 `TASKFLOW_ALLOWLIST_PATH`로 저장소 밖 경로를 지정하는 것이 안전합니다.
-
-```yaml
-allow:
-  - ["npm", "ci"]
-  - ["npm", "run", "build"]
-  - ["aws", "s3", "sync"]
-```
-
-정책 배경은 [Security](./security.md).
-
 ### `cd /path` Step이 `policy.violation`으로 거부됨
 
 의도된 동작입니다. `cd`는 shell/process 상태 변경 명령이라 별도 subprocess로 실행해도 다음 Step의 작업 디렉토리를 바꾸지 못합니다. Step의 `cwd` 필드를 사용하세요.
@@ -88,7 +75,7 @@ Backend 로그에서 `Task exception was never retrieved`를 확인하세요. �
 
 - 대상 커맨드가 존재하지 않음 (`ENOENT`)
 - 명시한 `cwd`가 존재하지 않거나 디렉토리가 아님
-- allowlist 미매칭으로 거부되었는데 UI가 아직 상태 폴링 중
+- `cd`/`pushd`/`popd`를 step 명령으로 써서 `policy.violation`으로 거부되었는데 UI가 아직 상태 폴링 중
 
 `backend/storage/logs/<run_id>/<step_id>.log` 파일에 stderr가 기록됩니다.
 

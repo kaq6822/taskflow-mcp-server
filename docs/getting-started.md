@@ -59,35 +59,6 @@ make dev
 5. Topbar에 `LIVE` 칩 표시 → Monitor 화면에서 실제 stdout이 SSE로 스트림됨
 6. 완료 후 Audit 화면에서 `job.create`, `job.run`, `job.run.done` 이벤트 확인 가능
 
-## argv allowlist
-
-Step의 argv는 로컬 allowlist에 등록된 커맨드만 사용할 수 있습니다. 파일은 **환경별**로 관리하도록 두 개로 분리되어 있습니다:
-
-| 경로 | 추적 | 역할 |
-|---|---|---|
-| `backend/app/dev/allowlist.example.yaml` | git 추적 | 저장소에 공유되는 기본 템플릿 |
-| `backend/app/dev/allowlist.yaml` | **`.gitignore` 제외** | 실제 사용되는 환경별 사본 |
-
-`make setup`(또는 `make setup-backend`) 시 템플릿이 로컬 사본으로 자동 복사됩니다. 이미 사본이 있으면 덮어쓰지 않습니다. 수동으로 재생성하려면 `make bootstrap-allowlist`.
-
-기본 허용 목록:
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["sleep"]
-  - ["ls"]
-  - ["cat"]
-  - ["/bin/true"]
-  - ["/bin/false"]
-  # + /bin/*, /usr/bin/* variants
-```
-
-필요한 커맨드(예: `zip`, 또는 환경에 맞는 래퍼 스크립트 절대경로)는 **`allowlist.yaml`**(템플릿이 아닌 로컬 사본)에 추가해야 실행됩니다. 변경 후에는 backend 재시작이 필요합니다(`make stop && make start-bg`). 프로덕션에서는 `TASKFLOW_ALLOWLIST_PATH`로 저장소 밖의 경로(예: `/etc/taskflow/allowlist.yaml`)를 지정할 수 있습니다.
-
-사고 방지를 위한 의도된 제한이며 정책 배경은 [Security](./security.md) 참조.
-
 ## Step 작업 디렉토리 (`cwd`)
 
 Step은 기본적으로 `TASKFLOW_STEP_CWD`(`./storage/runtime`)에서 실행됩니다. 특정 디렉토리에서 실행해야 하는 배포 Job은 Step에 `cwd`를 지정하세요.

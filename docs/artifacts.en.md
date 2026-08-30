@@ -157,9 +157,9 @@ Steps run with `shell=False` (`subprocess.Popen(argv)`). argv elements are never
 "cmd": ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
 ```
 
-### ⚠️ The step command must be in the allowlist
+### ⚠️ Reference the script by absolute path
 
-`/bin/bash` is **not** in the default allowlist. To handle artifacts from a script, add it to `backend/app/dev/allowlist.yaml` and restart the backend; otherwise saving the Job is rejected with `argv not in allowlist: /bin/bash`. **Register the script by absolute path** — a relative entry would authorise any same-named script in any directory. See [Artifact Jobs §0](./artifact-jobs.en.md) and [Security](./security.en.md).
+There is no restriction on which command a step may run, but a step's `cwd` is chosen by whoever writes the Job and is not validated — a relative `cmd` such as `["/bin/bash", "deploy.sh"]` resolves to whatever same-named script happens to sit in that step's `cwd`. **Register the script by its absolute path** (`/opt/taskflow/scripts/deploy.sh`) so the step always runs the file you intend. See [Artifact Jobs §3.6](./artifact-jobs.en.md#36-working-directory--cwd) and [Security](./security.en.md).
 
 ### Other things to watch for
 
@@ -269,4 +269,4 @@ No limit, as long as the aliases differ.
 - [Getting Started](./getting-started.en.md) — Installation and your first Job
 - [REST API](./rest-api.en.md) — Full endpoint list
 - [MCP API](./mcp-api.en.md) — Agent tools and scopes
-- [Security](./security.en.md) — allowlist, secret masking, audit log
+- [Security](./security.en.md) — `shell=False`, secret masking, audit log

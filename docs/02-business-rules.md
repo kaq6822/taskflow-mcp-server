@@ -228,7 +228,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 - `user=taskflow` — 전용 저권한 계정.
 - `cwd` — 기본은 `TASKFLOW_STEP_CWD`, Step별 `cwd` 지정 가능. `cd`류 상태 변경 명령은 거부.
 - `no-root` — root 권한 실행 금지.
-- **Allowlist**: argv 기반 허용 리스트 (화이트리스트). 외부에서 들어온 임의 cmd는 거부.
+
+실행 가능한 명령 자체는 제한하지 않는다. Job을 만들고 편집할 수 있는 권한이 곧 서버에서 임의 명령을 실행할 수 있는 권한이므로, MCP Key의 scope로 그 권한을 좁히고 모든 실행을 감사 로그로 추적하는 것이 실질적 통제 지점이다.
 
 ### 8.2 시크릿 처리
 

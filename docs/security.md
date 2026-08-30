@@ -1,41 +1,16 @@
 # Security Model
 
-TaskFlow는 AI Agent가 임의의 커맨드를 실행할 수 있다는 점을 전제로 설계되어, **강제되는 정책**으로 사고를 사전 차단합니다.
+TaskFlow는 AI Agent가 임의의 커맨드를 실행할 수 있다는 점을 전제로 설계되었습니다. step의 `cmd`에는 argv 형식(리스트)이기만 하면 어떤 명령이든 등록할 수 있고, 사전 등록이나 백엔드 재시작 없이 즉시 실행됩니다. 즉 **Job 편집 권한은 서버에서 임의 명령을 실행할 수 있는 권한과 동일**합니다.
+
+실행 가능한 명령 자체를 제한하지 않는 대신, TaskFlow는 실행 환경과 권한 체계를 **강제되는 정책**으로 좁혀 사고 범위를 통제합니다. "누가 Job을 만들고 실행할 수 있는가"를 MCP Key의 Scope(`run:<job-id>` 등)로 좁히고, 실행된 모든 행위를 hash-chained audit 로그에 남겨 사후 추적 가능하게 합니다. 신뢰하지 않는 주체에게는 Job 작성/편집 권한 자체를 주지 않는 것이 유일한 사전 차단선입니다.
 
 ## 강제 정책
 
 ### 1. `shell=False`
 
-Step 실행은 `asyncio.create_subprocess_exec(*argv)` 전용입니다. 코드베이스에 shell 문자열 실행 경로가 아예 존재하지 않습니다. argv가 리스트가 아니면 DAG 파싱 단계에서 거부됩니다.
+Step 실행은 `asyncio.create_subprocess_exec(*argv)` 전용입니다. 코드베이스에 shell 문자열 실행 경로가 아예 존재하지 않습니다. argv가 리스트가 아니면 DAG 파싱 단계에서 거부됩니다. 이는 shell 메타문자(`;`, `|`, `&&`, 백틱 등)를 이용한 우회를 차단하지만, **어떤 프로그램이 실행되는지는 제한하지 않습니다.**
 
-### 2. argv allowlist
-
-로컬 allowlist(`backend/app/dev/allowlist.yaml` — **환경별 사본**, `.gitignore` 제외)에 명시된 argv 프리픽스만 실행 가능합니다. 미매칭 시 `policy.violation` audit + DENY. 공유 템플릿은 `backend/app/dev/allowlist.example.yaml`이며 `make setup`이 첫 설치 시 사본을 생성합니다. 프로덕션에서는 `TASKFLOW_ALLOWLIST_PATH`로 저장소 밖의 경로를 지정하는 것을 권장합니다.
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["sleep"]
-  - ["ls"]
-  - ["cat"]
-  - ["/bin/true"]
-  - ["/bin/false"]
-  # + /bin/*, /usr/bin/* variants
-```
-
-추가가 필요한 경우:
-
-```yaml
-allow:
-  - ["npm", "ci"]
-  - ["npm", "run", "build"]
-  - ["aws", "s3", "sync"]
-```
-
-프리픽스 매칭이므로 `["npm", "ci"]`는 `npm ci --silent`를 허용하지만 `npm install`은 거부됩니다.
-
-### 3. 제어된 cwd
+### 2. 제어된 cwd
 
 Step은 기본적으로 `./storage/runtime`에서 실행됩니다. 이 기본값은 `TASKFLOW_STEP_CWD`로 override할 수 있습니다.
 
@@ -52,7 +27,7 @@ Job 작성자가 특정 Step의 실행 디렉토리를 제어해야 하면 Step�
 
 명시적 `cwd`는 비어 있으면 거부되고, 실행 시 존재하지 않거나 디렉토리가 아니면 해당 Step은 `FAILED`가 됩니다. `cd`, `pushd`, `popd`는 Step 명령으로 사용할 수 없습니다. 디렉토리 변경은 shell/process 상태 변경이라 다음 Step에 전달되지 않으므로 `cwd` 필드로 표현해야 합니다.
 
-### 4. 시크릿 환경변수 마스킹
+### 3. 시크릿 환경변수 마스킹
 
 `SECRET_*` prefix의 환경변수는:
 
@@ -61,7 +36,7 @@ Job 작성자가 특정 Step의 실행 디렉토리를 제어해야 하면 Step�
 
 환경변수 이름 자체는 감사에 남지만 값은 DB/로그 어디에도 저장되지 않습니다.
 
-### 5. Hash-chained audit
+### 4. Hash-chained audit
 
 ![Audit Log 화면](./assets/04-audit.png)
 
@@ -74,7 +49,7 @@ curl http://localhost:8000/api/audit/verify
 
 변조 발생 시 `{"ok": false, "broken_at": N}` 반환. 자세한 대응은 [Troubleshooting](./troubleshooting.md) 참조.
 
-### 6. MCP Key 보호
+### 5. MCP Key 보호
 
 - DB에는 **hash만** 저장. plaintext는 발급 시 1회만 응답에 포함.
 - Scope 매칭 + 토큰 버킷 rate-limit (`60/min` 등).
@@ -83,13 +58,13 @@ curl http://localhost:8000/api/audit/verify
 
 자세한 scope 규칙은 [MCP API §2](./mcp-api.md#2-scope-규칙) 참조.
 
-## 정책 우회가 불가능한 이유
+## 남은 정책을 우회할 수 없는 이유
 
 - Job 생성 시점(UI/REST) — DAG 파서가 argv 형식과 `cwd` 형식 검증 + shell 문자열/상태 변경 명령 거부
-- Run 시작 시점 — policies.py가 allowlist와 상태 변경 명령 재검증
+- Run 시작 시점 — policies.py가 상태 변경 명령(`cd`/`pushd`/`popd`)을 재검증
 - subprocess 시점 — `create_subprocess_exec`는 shell 해석을 수행하지 않음 (execve 직행)
 
-세 지점 모두에서 실패 시 `policy.violation` audit + run FAILED.
+세 지점 중 어디서든 실패하면 `policy.violation` audit + run FAILED로 이어집니다. 다만 이 검사들은 **무엇이 실행되는지**를 보지 않습니다 — argv 형식으로 표현되었는지, 그리고 worker의 작업 디렉터리를 바꾸려 들지 않는지만 확인합니다.
 
 ## 범위 밖 (현재 미구현)
 
@@ -102,6 +77,6 @@ curl http://localhost:8000/api/audit/verify
 
 ## 관련 문서
 
-- 정책 상세 구현 → `backend/app/engine/policies.py`, `backend/app/dev/allowlist.example.yaml`(템플릿), `backend/app/dev/allowlist.yaml`(환경별 로컬 사본)
+- 정책 상세 구현 → `backend/app/engine/policies.py`
 - 감사 이벤트 종류 → [02-business-rules.md](./02-business-rules.md)
 - MCP Key scope 매칭 → [MCP API](./mcp-api.md)
