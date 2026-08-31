@@ -186,7 +186,7 @@ Omitted, it defaults to `storage/runtime`, which is created if missing. **Set it
 
 A missing path fails with `exit 126 cwd not found: …`. `cd`, `pushd` and `popd` cannot be step commands (rejected on save) — express directory changes with `cwd`.
 
-> **Reference scripts by absolute path.** A step's `cwd` is set by whoever writes the Job and can be anything, so a relative `cmd` such as `["/bin/bash", "deploy.sh"]` only resolves to the script you mean if that step's `cwd` happens to be the directory it lives in — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/anything"}` would just as happily run a same-named script placed there instead. An absolute path (`/opt/taskflow/scripts/deploy.sh`) removes that ambiguity and pins the step to one specific file.
+> **Reference scripts by absolute path.** A step's `cwd` is set by whoever writes the Job and is only checked for being a non-empty string, so a relative `cmd` such as `["/bin/bash", "deploy.sh"]` only resolves to the script you mean if that step's `cwd` happens to be the directory it lives in — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/anything"}` would just as happily run a same-named script placed there instead. An absolute path (`/opt/taskflow/scripts/deploy.sh`) removes that ambiguity and pins the step to one specific file.
 
 ---
 

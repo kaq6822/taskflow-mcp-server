@@ -77,7 +77,7 @@ curl http://localhost:8000/api/audit/verify
 - SIEM forward — 로컬 audit 테이블만 제공 (`GET /api/audit/export.csv`)
 - ClamAV 실제 연동 — 현재 stub (업로드 즉시 READY)
 - **REST API 인증** — `/api/*` 라우트에는 인증 의존성이 없습니다. `bootstrap.py`가 admin 세션 토큰을 발급하지만 검증하는 경로가 없습니다.
-- **전용 저권한 계정 / no-root 실행** — `policies.py`의 `STEP_USER` 상수는 참조되지 않으며, worker는 `subprocess.Popen`에 `user=`나 uid drop을 넘기지 않습니다. Step은 백엔드를 실행한 계정 권한 그대로 동작합니다.
+- **전용 저권한 계정 / no-root 실행** — worker는 `subprocess.Popen`에 `user=`나 uid drop을 넘기지 않습니다. Step은 백엔드를 실행한 계정 권한 그대로 동작합니다.
 
 ## 관련 문서
 

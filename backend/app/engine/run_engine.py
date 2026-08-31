@@ -41,6 +41,20 @@ def _step_cwd(step_spec: dict) -> tuple[Path, bool]:
     return settings.step_cwd, False
 
 
+def _fmt_argv(cmd: object) -> str:
+    """Render a step command for logs without assuming it is well-formed argv.
+
+    `check_argv_shape` rejects a malformed `cmd`, but only after the command
+    has already been echoed to the log stream. A plain `" ".join(cmd)` there
+    raises TypeError on a non-string element and splits a bare string into
+    characters — either way the DENY path never runs. Fall back to `repr` so
+    the policy check keeps its chance to fail cleanly.
+    """
+    if isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
+        return " ".join(cmd)
+    return repr(cmd)
+
+
 CANCELLED_MESSAGE = "사용자 취소"
 
 
@@ -561,7 +575,7 @@ class RunEngine:
         log_bus.publish(
             run_id,
             "step.log",
-            {"step_id": sid, "ts": _ts(), "lvl": "cmd", "text": "$ " + " ".join(cmd)},
+            {"step_id": sid, "ts": _ts(), "lvl": "cmd", "text": "$ " + _fmt_argv(cmd)},
         )
         log_bus.publish(
             run_id,
@@ -611,7 +625,7 @@ class RunEngine:
             check_forbidden_state_command(cmd)
         except PolicyError as e:
             with log_path.open("ab") as f:
-                f.write(("$ " + " ".join(cmd) + "\n").encode())
+                f.write(("$ " + _fmt_argv(cmd) + "\n").encode())
                 f.write((f"DENY: {e}\n").encode())
             async with SessionLocal() as s:
                 rs = (

@@ -186,7 +186,7 @@ alias 규칙은 `^[A-Za-z][A-Za-z0-9_]*$`이고 대소문자를 무시해 중복
 
 없는 경로를 주면 `exit 126 cwd not found: …`로 실패한다. `cd`·`pushd`·`popd`는 step 명령으로 쓸 수 없다(저장 시 거부) — 디렉터리 이동은 `cwd`로 표현한다.
 
-> **스크립트는 절대 경로로 적는다.** step의 `cwd`는 Job 작성자가 정하는 값이고 검증되지 않으므로, `["/bin/bash", "deploy.sh"]`처럼 상대 경로로 적으면 그 step의 `cwd`에 우연히 같은 이름의 스크립트가 있을 때 그것이 실행된다 — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/무엇이든"}`도 그대로 통과한다. 절대 경로(`/opt/taskflow/scripts/deploy.sh`)로 적어야 실행할 파일이 하나로 고정된다.
+> **스크립트는 절대 경로로 적는다.** step의 `cwd`는 Job 작성자가 정하는 값이고 비어 있지 않은 문자열인지만 검증될 뿐 경로 값에는 아무 제약이 없으므로, `["/bin/bash", "deploy.sh"]`처럼 상대 경로로 적으면 그 step의 `cwd`에 우연히 같은 이름의 스크립트가 있을 때 그것이 실행된다 — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/무엇이든"}`도 그대로 통과한다. 절대 경로(`/opt/taskflow/scripts/deploy.sh`)로 적어야 실행할 파일이 하나로 고정된다.
 
 ---
 

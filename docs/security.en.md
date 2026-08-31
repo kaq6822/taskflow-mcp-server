@@ -77,7 +77,7 @@ The following are outside the current security model scope:
 - SIEM forward — only local audit table (`GET /api/audit/export.csv`)
 - ClamAV real integration — currently stub (upload immediately READY)
 - **REST API authentication** — no `/api/*` route has an auth dependency. `bootstrap.py` mints an admin session token, but nothing verifies it.
-- **Dedicated low-privilege account / no-root execution** — `STEP_USER` in `policies.py` has no readers, and the worker passes no `user=` or uid drop to `subprocess.Popen`. Steps run as whatever account started the backend.
+- **Dedicated low-privilege account / no-root execution** — the worker passes no `user=` or uid drop to `subprocess.Popen`. Steps run as whatever account started the backend.
 
 ## Related
 

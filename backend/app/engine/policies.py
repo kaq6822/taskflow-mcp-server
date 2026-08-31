@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-SHELL_FALSE = True  # 상수 — 변경 불가
-STEP_USER = "taskflow"
 _FORBIDDEN_STATE_COMMANDS = {"cd", "pushd", "popd"}
 
 
