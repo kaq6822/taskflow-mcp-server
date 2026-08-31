@@ -165,7 +165,7 @@ Job 자체의 FAILED/TIMEOUT은 HTTP 에러가 아닌 **응답 body의 `status`*
 - 실행 가능한 명령 자체는 제한하지 않음. Job 작성 API에 인증이 없으므로 실질적 차단선은 네트워크 접근 제어이며, MCP Key scope는 MCP 경로(실행·조회·업로드)에만 적용됨.
 - `cd`, `pushd`, `popd` 같은 shell/process 상태 변경 명령은 거부. 작업 디렉토리는 Step `cwd`로 지정.
 - Step 출력 assertion(`success_contains`, `failure_contains`)은 stdout/stderr 스트림을 라인 단위로 관찰해 최종 Step 상태에 반영.
-- 네트워크: egress 정책으로 제한된 도메인만 허용.
+- 네트워크 egress 제어는 **미구현** — 방화벽/seccomp 등 OS 계층에 위임한다. Step은 백엔드 호스트의 네트워크에 그대로 접근한다.
 
 ### 4.4 감사 무결성
 
