@@ -246,19 +246,10 @@ function OverviewTab({
           <div className="ctitle">{t.policy_enforced}</div>
           <div className="mono-s" style={{ lineHeight: 1.8 }}>
             <div>
-              <span className="chip ok">allowlist</span> {t.allowlist_argv}
-            </div>
-            <div>
-              <span className="chip ok">shell=False</span>
-            </div>
-            <div>
-              <span className="chip">user=taskflow</span>
+              <span className="chip ok">shell=False</span> {t.argv_only}
             </div>
             <div>
               <span className="chip">cwd</span>
-            </div>
-            <div>
-              <span className="chip warn">no-root</span>
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@
         dev-lan dev-lan-backend dev-lan-mcp dev-lan-frontend \
         build ensure-build start start-backend start-mcp \
         start-bg stop status logs \
-        test migrate reset clean bootstrap-allowlist
+        test migrate reset clean
 
 PY := python3
 VENV := backend/.venv
@@ -30,22 +30,10 @@ MCP_PID        := $(LOG_DIR)/mcp.pid
 setup: setup-backend setup-frontend migrate
 	@echo "\n✓ setup complete. run 'make dev' (loopback) or 'make dev-lan' (LAN)."
 
-setup-backend: bootstrap-allowlist
+setup-backend:
 	$(PY) -m venv $(VENV)
 	$(PIP) install --upgrade pip
 	$(PIP) install -e "backend[dev]"
-
-# Seed a per-environment argv allowlist from the tracked template on first
-# install. Never overwrites an existing local copy, so operators keep their
-# customizations across upgrades. The local file is .gitignored — edit it
-# freely without polluting the shared repo defaults.
-bootstrap-allowlist:
-	@if [ ! -f backend/app/dev/allowlist.yaml ]; then \
-	  echo "bootstrap-allowlist → copying template to backend/app/dev/allowlist.yaml"; \
-	  cp backend/app/dev/allowlist.example.yaml backend/app/dev/allowlist.yaml; \
-	else \
-	  echo "bootstrap-allowlist → existing backend/app/dev/allowlist.yaml preserved"; \
-	fi
 
 setup-frontend:
 	cd frontend && npm install
@@ -54,8 +42,11 @@ migrate:
 	cd backend && ../$(ALEMBIC) upgrade head
 
 # ---- Dev (loopback) ------------------------------------------------------
-# Three processes, each bound to 127.0.0.1 unless FRONTEND_HOST/API_HOST is
-# overridden. Intended for a single developer on localhost.
+# Three processes. The frontend binds to FRONTEND_HOST (localhost by default);
+# the backend and MCP default to 0.0.0.0, so they ARE reachable from the network
+# even here — pass API_HOST=127.0.0.1 MCP_HOST=127.0.0.1 to keep them loopback-only.
+# There is no auth on /api/*, so treat any non-loopback binding as public access
+# to arbitrary command execution (see docs/security.md).
 dev:
 	@echo "dev → backend $(API_HOST):$(API_PORT) · mcp $(MCP_HOST):$(MCP_PORT) · frontend $(FRONTEND_HOST):$(FRONTEND_PORT)"
 	@trap 'kill 0' INT TERM EXIT; \

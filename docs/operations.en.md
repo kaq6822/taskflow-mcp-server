@@ -88,7 +88,7 @@ TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173 \
 - `TASKFLOW_API_HOST_PUBLIC` — Host used by browser/external clients to reach the API (for Vite proxy target configuration)
 - `TASKFLOW_CORS_ORIGINS` — **Comma-separated** origin whitelist. Must include the remote browser's origin when it calls `/api` directly. Vite-proxied calls are same-origin and are not affected. Use a single `*` in dev for allow-all.
 
-> ⚠️ There is currently no login gate in the UI. Exposing with `dev-lan` allows anyone to create/run jobs — use only on trusted networks.
+> ⚠️ There is currently no login gate in the UI. Exposing with `dev-lan` allows anyone to create/run jobs — and, since there is no restriction on what a step's `cmd` may run (see [Security](./security.en.md)), that means arbitrary commands on the server. Use only on trusted networks.
 
 ## Production Release
 
@@ -133,14 +133,13 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | Artifact/log root |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Default subprocess cwd when a step does not set `cwd` |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding. **Defaults to every interface, and `/api/*` has no auth** — set `127.0.0.1` to keep it loopback-only |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | Max wait for `run_job(sync)` |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite binding |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | External API host (Vite proxy target) |
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | Comma-separated origin whitelist |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | SPA dist path for production mode |
-| `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist path. For production, prefer an out-of-tree location such as `/etc/taskflow/allowlist.yaml` |
 
 ## Step cwd Management
 
@@ -158,20 +157,6 @@ Steps run from `TASKFLOW_STEP_CWD` by default. For deployment jobs that need a s
 An explicit `cwd` must already exist and must be a directory. If it is missing or points to a file, the step ends as `FAILED`. For production deployment jobs, absolute paths are recommended over relative paths.
 
 Using `cd /path` as a separate step is not supported. `cd` is shell/process state that does not carry over to later steps, and TaskFlow rejects it as a `policy.violation`.
-
-## argv Allowlist Management
-
-The argv allowlist is **per-environment** configuration:
-
-| Path | Tracked | Role |
-|---|---|---|
-| `backend/app/dev/allowlist.example.yaml` | in git | Shared template (change via PR review) |
-| `backend/app/dev/allowlist.yaml` | `.gitignore`d | Local copy auto-seeded by `make setup`; this is what the runtime actually loads |
-| Path set by `TASKFLOW_ALLOWLIST_PATH` | — | Recommended for production — an out-of-tree file such as `/etc/taskflow/allowlist.yaml` |
-
-After the first install, edit `allowlist.yaml` to fit your environment. Changes take effect on backend restart (`make stop && make start-bg`) — the current implementation does not hot-reload. If you see a "falling back to shipped template" warning in the logs, run `make bootstrap-allowlist` to seed the local copy.
-
-In production, have your deployment tooling (Ansible, Terraform, Helm, etc.) set `TASKFLOW_ALLOWLIST_PATH` and manage the file at that path, keeping its lifecycle fully separate from the repo's template.
 
 ## Data Locations
 

@@ -37,10 +37,5 @@ taskflow.db-shm
 storage/
 logs/
 
-# Per-environment argv allowlist. The shipped template is
-# backend/app/dev/allowlist.example.yaml; the local, environment-specific
-# copy below must NOT be committed back to the shared repo.
-backend/app/dev/allowlist.yaml
-
 # 로컬 검증용 대체 스토리지 루트 (TASKFLOW_STORAGE_DIR 변경 시)
 relstore/

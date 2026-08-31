@@ -2,54 +2,7 @@
 
 Where the [Artifacts guide](./artifacts.en.md) covers *how artifacts work*, this document answers **"so how do I write the Job?"** It collects skeletons and patterns you can copy and adapt.
 
----
-
-## 0. Prerequisite: allowlist the interpreter
-
-A Job that handles artifacts almost always runs a script. But a step's `cmd` runs with `shell=False`, and the command must be **registered in the argv allowlist**. `/bin/bash` is not there by default.
-
-Edit `backend/app/dev/allowlist.yaml` (run `make bootstrap-allowlist` if it does not exist).
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["cat"]
-  - ["/usr/bin/shasum"]
-  # scripts by absolute path — see the warning below. These are the ones this document uses
-  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/health.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
-```
-
-> **Write the entry in the same shape as the step's `cmd`.** Elements are compared as strings, so a `cmd` of `["/bin/bash", "deploy.sh"]` does not match an entry written as `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`. Each script needs its own entry.
-
-> ⚠️ **Always register scripts by absolute path.** A relative entry such as `["/bin/bash", "deploy.sh"]` authorises **any `deploy.sh` anywhere on the host**: a step's `cwd` is chosen by whoever writes the Job and is not validated, so `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/anything"}` passes. Only an absolute entry pins execution to one file.
-
-Each entry matches the **leading part (prefix) of argv**. `["echo"]` allows any invocation starting with `echo`; `["/bin/bash", "/opt/…/deploy.sh"]` allows only that script.
-
-`*` is supported, but it is a **whole-element wildcard, not a path glob.**
-
-| Entry | Matches `/bin/bash /opt/taskflow/scripts/deploy.sh`? |
-|---|---|
-| `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` | ✅ exact match |
-| `["/bin/bash", "*"]` | ✅ any second element |
-| `["/bin/bash"]` | ✅ prefix-only, so anything goes |
-| `["/bin/bash", "/opt/taskflow/scripts/*"]` | ❌ **no match** — compared literally against the string containing `*` |
-
-So "only scripts in this directory" cannot be expressed. List each allowed script individually.
-
-Also, because this is a **prefix** check, extra arguments after the registered elements are allowed: `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` also permits `/bin/bash /opt/taskflow/scripts/deploy.sh --force`. To constrain the arguments too, include them in the entry.
-
-> **`["/bin/bash"]` and `["/bin/bash", "*"]` let any script run.** Naming the script path as the second element is the safer shape.
-
-A **backend restart** is required. Saving a Job with an unregistered command is rejected with `400`.
-
-```json
-{"detail": "argv not in allowlist: /bin/bash"}
-```
+A step's `cmd` is execve'd as written (`shell=False`), and there is no restriction on which command it may be. Permission to create and edit Jobs is therefore permission to run arbitrary commands on the server — grant the Job-authoring scope only to principals you trust; see [Security](./security.en.md).
 
 ---
 
@@ -64,7 +17,7 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② Place the script** — at the absolute path you allowlisted. Where the script *lives* and the directory it *runs in* are separate: the file sits in `/opt/taskflow/scripts/`, but the cwd is `storage/runtime` by default, so the `./app.jar` in the example below is created as `storage/runtime/app.jar`.
+**② Place the script** — at the absolute path referenced in `cmd`. Where the script *lives* and the directory it *runs in* are separate: the file sits in `/opt/taskflow/scripts/`, but the cwd is `storage/runtime` by default, so the `./app.jar` in the example below is created as `storage/runtime/app.jar`.
 
 ```bash
 # /opt/taskflow/scripts/deploy.sh
@@ -108,11 +61,10 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 
 | Step | Check | If missed |
 |---|---|---|
-| ① allowlist | Command is in `allowlist.yaml` and the backend was restarted | `400 argv not in allowlist` on save |
-| ② script location | The file really exists at the absolute path you allowlisted | `exit 127 executable not found` |
-| ③ alias declared | The alias is in `consumes_artifacts` | `ARTIFACT_*` is never injected (silently empty) |
-| ④ cmd | Variables are read **inside** the program | `$ARTIFACT_...` passed as a literal string |
-| ⑤ verdict | Is the exit code enough to judge success? | Failures reported as success |
+| ① script location | The file really exists at the absolute path referenced in `cmd` | `exit 127 executable not found` |
+| ② alias declared | The alias is in `consumes_artifacts` | `ARTIFACT_*` is never injected (silently empty) |
+| ③ cmd | Variables are read **inside** the program | `$ARTIFACT_...` passed as a literal string |
+| ④ verdict | Is the exit code enough to judge success? | Failures reported as success |
 
 ---
 
@@ -234,6 +186,8 @@ Omitted, it defaults to `storage/runtime`, which is created if missing. **Set it
 
 A missing path fails with `exit 126 cwd not found: …`. `cd`, `pushd` and `popd` cannot be step commands (rejected on save) — express directory changes with `cwd`.
 
+> **Reference scripts by absolute path.** A step's `cwd` is set by whoever writes the Job and is only checked for being a non-empty string, so a relative `cmd` such as `["/bin/bash", "deploy.sh"]` only resolves to the script you mean if that step's `cwd` happens to be the directory it lives in — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/anything"}` would just as happily run a same-named script placed there instead. An absolute path (`/opt/taskflow/scripts/deploy.sh`) removes that ambiguity and pins the step to one specific file.
+
 ---
 
 ## 4. Anti-patterns
@@ -292,7 +246,7 @@ With `idempotency_key`, calling again with the same key returns the existing run
 
 ## 6. Pre-deploy review
 
-- [ ] Is the command in the allowlist, and no broader than it needs to be?
+- [ ] Is the script referenced by absolute path, and writable only by trusted operators? (there is no command restriction — see [Security](./security.en.md))
 - [ ] Does the script start with `set -euo pipefail` so mid-script failures are not swallowed?
 - [ ] Is the artifact copied before being worked on?
 - [ ] Is the exit code enough, or is `success_contains` needed?
@@ -306,5 +260,5 @@ With `idempotency_key`, calling again with the same key returns the existing run
 
 - [Artifacts](./artifacts.en.md) — how upload, env vars and pinning work
 - [Getting Started](./getting-started.en.md) — installation and your first Job
-- [Security](./security.en.md) — allowlist design, secret masking, audit log
+- [Security](./security.en.md) — `shell=False`, secret masking, audit log
 - [Troubleshooting](./troubleshooting.en.md) — symptom-based fixes

@@ -88,7 +88,7 @@ TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173 \
 - `TASKFLOW_API_HOST_PUBLIC` — 브라우저/외부 클라이언트가 API에 접근할 때 쓰는 호스트 (Vite proxy target 구성용)
 - `TASKFLOW_CORS_ORIGINS` — **콤마 구분** origin 화이트리스트. 원격 브라우저가 `/api`를 직접 호출할 때 반드시 포함. Vite 프록시 경유 호출은 same-origin이라 CORS 영향 없음. dev에서 `*` 한 개만 넣으면 allow-all.
 
-> ⚠️ UI에는 현재 로그인 게이트가 없습니다. `dev-lan`으로 외부 노출 시 누구나 Job 생성/실행이 가능하므로 신뢰된 네트워크에서만 사용하세요.
+> ⚠️ UI에는 현재 로그인 게이트가 없고, `/api/*` 라우트에도 인증이 없습니다. 외부에 노출하면 누구나 Job을 만들고 실행할 수 있으며, step의 `cmd`에 실행 가능한 명령 제한이 없으므로([Security](./security.md) 참고) 이는 곧 **서버에서 임의 명령을 실행할 수 있다**는 뜻입니다. 신뢰된 네트워크에서만 사용하세요.
 
 ## 프로덕션 릴리즈
 
@@ -133,14 +133,13 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | 아티팩트·로그 루트 |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step `cwd` 미지정 시 사용할 기본 subprocess cwd |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩 |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `127.0.0.1` 지정 |
 | `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | `run_job(sync)` 최대 대기 |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite 바인딩 |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | 외부에서 본 API 호스트 (Vite proxy target) |
 | `TASKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 콤마 구분 origin 화이트리스트 |
 | `TASKFLOW_FRONTEND_DIST_DIR` | *(unset)* | production 모드의 SPA dist 경로 |
-| `TASKFLOW_ALLOWLIST_PATH` | `./app/dev/allowlist.yaml` | argv allowlist 경로. 프로덕션은 `/etc/taskflow/allowlist.yaml` 같은 저장소 밖 경로 권장 |
 
 ## Step cwd 관리
 
@@ -158,20 +157,6 @@ Step은 기본적으로 `TASKFLOW_STEP_CWD`에서 실행됩니다. 특정 배포
 명시적 `cwd`는 실행 전에 이미 존재하는 디렉토리여야 합니다. 존재하지 않거나 파일이면 해당 Step은 `FAILED`가 됩니다. 운영 배포에서는 상대 경로보다 절대 경로를 권장합니다.
 
 `cd /path`를 별도 Step으로 두는 방식은 지원하지 않습니다. `cd`는 shell/process 상태 변경이라 다음 Step에 전달되지 않으며, TaskFlow는 이를 `policy.violation`으로 거부합니다.
-
-## argv allowlist 관리
-
-argv allowlist는 **환경별** 설정입니다:
-
-| 경로 | 추적 | 용도 |
-|---|---|---|
-| `backend/app/dev/allowlist.example.yaml` | git 추적 | 저장소 공유 템플릿 (변경은 PR로 리뷰) |
-| `backend/app/dev/allowlist.yaml` | `.gitignore` 제외 | `make setup`이 자동 복사하는 로컬 사본. 실제 운영 중 사용 |
-| `TASKFLOW_ALLOWLIST_PATH`로 지정한 경로 | — | 프로덕션 권장. `/etc/taskflow/allowlist.yaml` 등 저장소 밖 파일 |
-
-첫 설치 후 `allowlist.yaml`을 본인 환경에 맞게 편집하세요. 변경 후 반영은 backend 재시작(`make stop && make start-bg`)입니다 — 현재 구현은 런타임 hot-reload를 지원하지 않으므로 로그 상에 "falling back to shipped template" 경고가 보이면 `make bootstrap-allowlist`로 로컬 사본부터 생성하세요.
-
-프로덕션 배포에서는 deployment 도구(Ansible, Terraform, Helm 등)로 `TASKFLOW_ALLOWLIST_PATH`를 세팅하고 해당 경로 파일을 관리하여, 저장소의 템플릿과 완전히 분리된 수명 주기를 유지하는 것을 권장합니다.
 
 ## 데이터 위치
 

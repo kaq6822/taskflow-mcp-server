@@ -8,7 +8,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![status](https://img.shields.io/badge/status-MVP-orange)
 
-**AI Agent가 1차 사용자인 Workflow 오케스트레이션 플랫폼.** Scope 기반 권한, argv allowlist, hash-chained audit으로 Agent 실행을 통제하며, MCP(Model Context Protocol) 엔드포인트를 통해 Claude 등 Agent가 Job을 안전하게 실행할 수 있게 합니다.
+**AI Agent가 1차 사용자인 Workflow 오케스트레이션 플랫폼.** Scope 기반 권한과 hash-chained audit으로 Agent 실행을 통제하며, MCP(Model Context Protocol) 엔드포인트를 통해 Claude 등 Agent가 Job을 안전하게 실행할 수 있게 합니다.
 
 ![Dashboard](./docs/assets/01-dashboard.png)
 
@@ -52,7 +52,7 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 ## 주요 특징
 
 - **AI Agent First** — MCP 엔드포인트로 Agent가 Job을 직접 트리거, 결과는 구조화된 스키마(`status`, `steps[]`, `failed_step`, `logs_uri` 등)로 반환
-- **Sandboxed by default** — `shell=False`(argv 리스트 전용), argv allowlist, 제어된 cwd(`TASKFLOW_STEP_CWD` 기본 + Step별 `cwd`), 시크릿 환경변수 마스킹
+- **Controlled execution** — `shell=False`(argv 리스트 전용), 제어된 cwd(`TASKFLOW_STEP_CWD` 기본 + Step별 `cwd`), 시크릿 환경변수 마스킹. 실행 가능한 명령 자체는 제한하지 않으므로 Job 편집 권한(Scope)과 hash-chained audit으로 통제
 - **Observable** — SSE로 실시간 stdout/stderr 스트림, 출력 문자열 기반 Step 성공/실패 판정, Workflow DAG 시각화(DAG · List · Timeline 3뷰)
 - **Immutable audit** — append-only hash-chained 감사 로그, `/api/audit/verify`로 무결성 검증
 - **MCP 통제** — Key별 scope(`run:<job-id>` / `read:*` / `write:uploads` 등) + 토큰 버킷 rate-limit + 발급/회전/revoke 전체 감사 기록
@@ -61,13 +61,13 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 
 | 문서 | 내용 |
 |---|---|
-| [Getting Started](./docs/getting-started.md) | 설치 · 첫 Job 만들기 · argv allowlist |
+| [Getting Started](./docs/getting-started.md) | 설치 · 첫 Job 만들기 · Step 작업 디렉토리(cwd) |
 | [Artifacts](./docs/artifacts.md) | 업로드 · Job에서 alias 선언 · step에서 `ARTIFACT_*` 사용 · 버전 고정 |
-| [Artifact Jobs](./docs/artifact-jobs.md) | 아티팩트를 쓰는 Job 작성법 · allowlist · 판정/실패 처리 · 안티패턴 |
+| [Artifact Jobs](./docs/artifact-jobs.md) | 아티팩트를 쓰는 Job 작성법 · 판정/실패 처리 · 안티패턴 |
 | [MCP API](./docs/mcp-api.md) | Key 발급 · JSON-RPC 호출 · 도구 목록 · Claude Desktop 연동 |
 | [REST API](./docs/rest-api.md) | 엔드포인트 · SSE 이벤트 포맷 · 오류 코드 |
 | [Operations](./docs/operations.md) | 실행 모드(A/B/C) · 네트워크 바인딩 · 프로덕션 릴리즈 · 환경변수 |
-| [Security](./docs/security.md) | `shell=False` · allowlist · 시크릿 마스킹 · hash-chained audit |
+| [Security](./docs/security.md) | `shell=False` · 제어된 cwd · 시크릿 마스킹 · hash-chained audit |
 | [Troubleshooting](./docs/troubleshooting.md) | 자주 발생하는 증상과 해결 |
 | [Design Docs](./docs/00-overview.md) | 프로젝트 배경 · 도메인 규칙 · 시스템 스펙 (`00` → `03` 순서) |
 
@@ -77,11 +77,12 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 make test
 ```
 
-pytest 16개 케이스:
+pytest 82개 케이스 — 주요 항목:
 
 - `test_audit_chain.py` — 10개 이벤트 체인 intact, 1 row 위변조 탐지
 - `test_dag.py` — topo sort, 비순환 검증, 중복 id/shell 문자열 거부
-- `test_allowlist.py` — `echo` 허용, `rm` 거부, 비-리스트 argv 거부
+- `test_policies.py` — `cd`/`pushd`/`popd` 거부, 그 외 명령은 통과, 빈 argv no-op
+- `test_job_policy_api.py` — 임의 명령(`/bin/bash`·`rm`·`docker`) Job 저장 허용, `cd`는 400 + `policy.violation` DENY 기록
 - `test_scope.py` — 정확 매칭 / wildcard / read-only가 run 거부
 - `test_rate_limit.py` — 10/min 버스트 후 11번째 호출 시 `retry_after`
 

@@ -6,7 +6,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![status](https://img.shields.io/badge/status-MVP-orange)
 
-**A workflow orchestration platform with AI Agents as primary users.** Scope-based permissions, argv allowlist, and hash-chained audit control agent execution, allowing Claude and other agents to safely run jobs through MCP (Model Context Protocol) endpoints.
+**A workflow orchestration platform with AI Agents as primary users.** Scope-based permissions and hash-chained audit control agent execution, allowing Claude and other agents to safely run jobs through MCP (Model Context Protocol) endpoints.
 
 ![Dashboard](./docs/assets/01-dashboard.png)
 
@@ -50,7 +50,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 ## Key Features
 
 - **AI Agent First** — MCP endpoint lets agents trigger jobs directly; results returned as structured schema (`status`, `steps[]`, `failed_step`, `logs_uri`, etc.)
-- **Sandboxed by default** — `shell=False` (argv list only), argv allowlist, controlled cwd (`TASKFLOW_STEP_CWD` default + per-step `cwd`), secret env var masking
+- **Controlled execution** — `shell=False` (argv list only, no shell string is ever interpreted), controlled cwd (`TASKFLOW_STEP_CWD` default + per-step `cwd`), secret env var masking. A step's `cmd` is not restricted to a fixed set of commands — see [Security](./docs/security.en.md) for what that means
 - **Observable** — Real-time stdout/stderr via SSE, output-text assertions for Step success/failure, Workflow DAG visualization (DAG · List · Timeline views)
 - **Immutable audit** — Append-only hash-chained audit log; integrity verification via `/api/audit/verify`
 - **MCP control** — Per-key scopes (`run:<job-id>` / `read:*` / `write:uploads`, etc.) + token bucket rate-limit + full issue/rotate/revoke audit trail
@@ -59,13 +59,13 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 
 | Document | Contents |
 |---|---|
-| [Getting Started](./docs/getting-started.en.md) | Installation · First job · argv allowlist |
+| [Getting Started](./docs/getting-started.en.md) | Installation · First job |
 | [Artifacts](./docs/artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
-| [Artifact Jobs](./docs/artifact-jobs.en.md) | Authoring Jobs that use artifacts · allowlist · verdicts/failure handling · anti-patterns |
+| [Artifact Jobs](./docs/artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
 | [MCP API](./docs/mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [REST API](./docs/rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [Operations](./docs/operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |
-| [Security](./docs/security.en.md) | `shell=False` · allowlist · Secret masking · hash-chained audit |
+| [Security](./docs/security.en.md) | `shell=False` · Secret masking · hash-chained audit |
 | [Troubleshooting](./docs/troubleshooting.en.md) | Common symptoms and solutions |
 | [Design Docs](./docs/00-overview.md) | Project background · Domain rules · System spec (`00` → `03`) |
 
@@ -75,11 +75,12 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 make test
 ```
 
-pytest — 16 test cases:
+pytest — 82 test cases; the main ones:
 
 - `test_audit_chain.py` — 10-event chain intact, 1 row tampering detected
 - `test_dag.py` — topo sort, cycle detection, duplicate id/shell string rejection
-- `test_allowlist.py` — `echo` allowed, `rm` denied, non-list argv denied
+- `test_policies.py` — `cd`/`pushd`/`popd` denied as step commands, ordinary commands (incl. `rm`) pass through unrestricted
+- `test_job_policy_api.py` — arbitrary commands (`/bin/bash`, `rm`, `docker`) save fine; `cd` returns 400 and records a `policy.violation` DENY
 - `test_scope.py` — exact match / wildcard / read-only denies run
 - `test_rate_limit.py` — after 10/min burst, 11th call returns `retry_after`
 

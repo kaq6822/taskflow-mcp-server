@@ -59,35 +59,6 @@ Open **http://localhost:5173** in your browser. On first run, the backend prints
 5. `LIVE` chip appears in the topbar → Monitor screen streams actual stdout via SSE
 6. After completion, check the Audit screen for `job.create`, `job.run`, `job.run.done` events
 
-## argv Allowlist
-
-Step argv can only use commands registered in the local allowlist. The file is split in two so each environment can customise it without polluting the shared repo:
-
-| Path | Tracked | Role |
-|---|---|---|
-| `backend/app/dev/allowlist.example.yaml` | in git | The shipped template shared across clones |
-| `backend/app/dev/allowlist.yaml` | **`.gitignore`d** | The per-environment copy actually loaded at runtime |
-
-`make setup` (or `make setup-backend`) copies the template into place on first install, and never overwrites an existing local copy. To regenerate manually, run `make bootstrap-allowlist`.
-
-Defaults:
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["sleep"]
-  - ["ls"]
-  - ["cat"]
-  - ["/bin/true"]
-  - ["/bin/false"]
-  # + /bin/*, /usr/bin/* variants
-```
-
-Commands you need (e.g., `zip`, or the absolute path of an environment-specific wrapper script) must be added to **`allowlist.yaml`** — the local copy, not the template. Restart the backend after editing (`make stop && make start-bg`). In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file (e.g., `/etc/taskflow/allowlist.yaml`) managed by your deployment tooling.
-
-This is an intentional restriction to prevent accidents. See [Security](./security.en.md) for policy background.
-
 ## Step Working Directory (`cwd`)
 
 Steps run from `TASKFLOW_STEP_CWD` (`./storage/runtime`) by default. Deployment jobs that need a specific directory should set step-level `cwd`.

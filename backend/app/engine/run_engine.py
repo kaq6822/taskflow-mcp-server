@@ -13,8 +13,8 @@ from app.db import SessionLocal
 from app.engine.dag import topo_sort
 from app.engine.log_bus import log_bus
 from app.engine.policies import (
-    AllowlistError,
-    check_allowlist,
+    PolicyError,
+    check_argv_shape,
     check_forbidden_state_command,
     filter_env,
 )
@@ -39,6 +39,20 @@ def _step_cwd(step_spec: dict) -> tuple[Path, bool]:
     if isinstance(raw, str) and raw.strip():
         return Path(raw), True
     return settings.step_cwd, False
+
+
+def _fmt_argv(cmd: object) -> str:
+    """Render a step command for logs without assuming it is well-formed argv.
+
+    `check_argv_shape` rejects a malformed `cmd`, but only after the command
+    has already been echoed to the log stream. A plain `" ".join(cmd)` there
+    raises TypeError on a non-string element and splits a bare string into
+    characters — either way the DENY path never runs. Fall back to `repr` so
+    the policy check keeps its chance to fail cleanly.
+    """
+    if isinstance(cmd, list) and all(isinstance(c, str) for c in cmd):
+        return " ".join(cmd)
+    return repr(cmd)
 
 
 CANCELLED_MESSAGE = "사용자 취소"
@@ -561,7 +575,7 @@ class RunEngine:
         log_bus.publish(
             run_id,
             "step.log",
-            {"step_id": sid, "ts": _ts(), "lvl": "cmd", "text": "$ " + " ".join(cmd)},
+            {"step_id": sid, "ts": _ts(), "lvl": "cmd", "text": "$ " + _fmt_argv(cmd)},
         )
         log_bus.publish(
             run_id,
@@ -605,13 +619,13 @@ class RunEngine:
         log_path = settings.logs_dir / str(run_id) / f"{sid}.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Allowlist re-check (defense in depth)
+        # Policy re-check (defense in depth)
         try:
+            check_argv_shape(cmd)
             check_forbidden_state_command(cmd)
-            check_allowlist(cmd)
-        except AllowlistError as e:
+        except PolicyError as e:
             with log_path.open("ab") as f:
-                f.write(("$ " + " ".join(cmd) + "\n").encode())
+                f.write(("$ " + _fmt_argv(cmd) + "\n").encode())
                 f.write((f"DENY: {e}\n").encode())
             async with SessionLocal() as s:
                 rs = (

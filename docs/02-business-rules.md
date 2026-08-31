@@ -225,10 +225,11 @@ PENDING → RUNNING → SUCCESS (exit 0)
 모든 Step은 다음 정책이 **강제됨** (변경 불가):
 
 - `shell=False` — subprocess shell 미사용, argv 기반.
-- `user=taskflow` — 전용 저권한 계정.
 - `cwd` — 기본은 `TASKFLOW_STEP_CWD`, Step별 `cwd` 지정 가능. `cd`류 상태 변경 명령은 거부.
-- `no-root` — root 권한 실행 금지.
-- **Allowlist**: argv 기반 허용 리스트 (화이트리스트). 외부에서 들어온 임의 cmd는 거부.
+
+전용 저권한 계정(`user=taskflow`)과 `no-root` 실행은 설계 목표이나 **아직 강제되지 않는다** — Step은 백엔드를 실행한 계정 권한으로 동작한다.
+
+실행 가능한 명령 자체도 제한하지 않는다. Job을 만들고 편집할 수 있는 권한이 곧 서버에서 임의 명령을 실행할 수 있는 권한이며, Job 작성 API에는 아직 인증이 없으므로 실질적인 차단선은 네트워크 접근 제어다. MCP Key scope는 실행(`run:<job-id>`)·조회·업로드 등 MCP 경로에만 적용된다. 모든 실행은 감사 로그로 추적된다.
 
 ### 8.2 시크릿 처리
 

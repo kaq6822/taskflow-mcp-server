@@ -53,19 +53,6 @@ See [MCP API §2](./mcp-api.en.md#2-scope-rules) for scope matching rules.
 
 ## Execution
 
-### Job run immediately returns `policy.violation` for an allowlisted command
-
-This is intentional behavior. Add the argv prefix to the **local copy** at `backend/app/dev/allowlist.yaml` (not the tracked template) and restart the backend. If the local copy does not exist yet, run `make bootstrap-allowlist` to seed it from `backend/app/dev/allowlist.example.yaml`. In production, prefer pointing `TASKFLOW_ALLOWLIST_PATH` at an out-of-tree file.
-
-```yaml
-allow:
-  - ["npm", "ci"]
-  - ["npm", "run", "build"]
-  - ["aws", "s3", "sync"]
-```
-
-See [Security](./security.en.md) for policy background.
-
 ### `cd /path` step is rejected with `policy.violation`
 
 This is intentional. `cd` is shell/process state, and running it in a separate subprocess would not change the working directory of later steps. Use the step-level `cwd` field.
@@ -88,7 +75,7 @@ Check the backend logs for `Task exception was never retrieved`. Most commonly:
 
 - The target command does not exist (`ENOENT`)
 - The explicit `cwd` does not exist or is not a directory
-- Rejected by allowlist mismatch, but the UI is still polling for status
+- Rejected by policy (e.g. `cd`/`pushd`/`popd` as a step command), but the UI is still polling for status
 
 Stderr is recorded in `backend/storage/logs/<run_id>/<step_id>.log`.
 

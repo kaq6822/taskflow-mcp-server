@@ -2,54 +2,7 @@
 
 [Artifacts 가이드](./artifacts.md)가 "아티팩트가 어떻게 동작하는가"를 다룬다면, 이 문서는 **"그래서 Job을 어떻게 짜는가"** 에 답한다. 복사해서 고쳐 쓸 수 있는 골격과 패턴을 모았다.
 
----
-
-## 0. 준비: allowlist에 실행기 등록
-
-아티팩트를 다루는 Job은 거의 항상 스크립트를 실행한다. 그런데 step의 `cmd`는 `shell=False`로 실행되고, 실행할 명령은 **argv allowlist에 등록돼 있어야 한다.** `/bin/bash`는 기본 allowlist에 없다.
-
-`backend/app/dev/allowlist.yaml`을 편집한다(없으면 `make bootstrap-allowlist`).
-
-```yaml
-allow:
-  - ["echo"]
-  - ["printf"]
-  - ["cat"]
-  - ["/usr/bin/shasum"]
-  # 스크립트는 절대 경로로 — 아래 경고 참고. 이 문서 예제에 나오는 것들이다
-  - ["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/verify.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/health.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/fetch.sh"]
-  - ["/bin/bash", "/opt/taskflow/scripts/migrate.sh"]
-```
-
-> **항목은 step의 `cmd`와 같은 형태로 적어야 한다.** 원소끼리 문자열 비교하므로, `cmd`가 `["/bin/bash", "deploy.sh"]`인데 allowlist에는 `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`로 적어두면 매칭되지 않는다. 스크립트마다 항목이 하나씩 필요하다.
-
-> ⚠️ **스크립트는 반드시 절대 경로로 등록한다.** `["/bin/bash", "deploy.sh"]`처럼 **상대 경로로 등록하면 호스트의 어느 디렉터리에 있는 `deploy.sh`든 실행할 수 있게 된다.** step의 `cwd`는 Job 작성자가 정하는 값이고 검증되지 않으므로, `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/무엇이든"}`이 그대로 통과한다. 절대 경로로 등록해야 실행할 파일이 하나로 고정된다.
-
-각 항목은 **argv의 앞부분(prefix)** 과 매칭된다. `["echo"]`는 `echo`로 시작하는 모든 호출을 허용하고, `["/bin/bash", "/opt/…/deploy.sh"]`는 그 스크립트를 실행하는 경우만 허용한다.
-
-`*`를 쓸 수 있지만 **원소 하나를 통째로 대체하는 와일드카드이고, 경로 glob이 아니다.**
-
-| 항목 | `/bin/bash /opt/taskflow/scripts/deploy.sh` 매칭 |
-|---|---|
-| `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]` | ✅ 정확히 일치 |
-| `["/bin/bash", "*"]` | ✅ 두 번째 원소가 무엇이든 허용 |
-| `["/bin/bash"]` | ✅ prefix만 검사하므로 무엇이든 허용 |
-| `["/bin/bash", "/opt/taskflow/scripts/*"]` | ❌ **매칭되지 않음** — `*`가 포함된 문자열과 그대로 비교한다 |
-
-즉 "특정 디렉터리의 스크립트만" 같은 제한은 표현할 수 없다. 허용할 스크립트를 하나씩 나열해야 한다.
-
-또한 **prefix 검사이므로 등록한 원소 뒤에 인자를 더 붙이는 것은 허용된다.** `["/bin/bash", "/opt/taskflow/scripts/deploy.sh"]`는 `/bin/bash /opt/taskflow/scripts/deploy.sh --force`도 통과시킨다. 스크립트가 받는 인자까지 제한하려면 그 인자를 항목에 포함해야 한다.
-
-> **`["/bin/bash"]`나 `["/bin/bash", "*"]`는 임의의 스크립트를 실행할 수 있게 만든다.** 두 번째 원소에 스크립트 경로를 정확히 적어 좁히는 편이 안전하다.
-
-편집 후 **백엔드를 재시작**해야 적용된다. 등록되지 않은 명령으로 Job을 저장하면 `400`으로 거부된다.
-
-```json
-{"detail": "argv not in allowlist: /bin/bash"}
-```
+step의 `cmd`에 적은 argv는 `shell=False`로 그대로 execve되며, 실행할 명령 자체에는 제한이 없다. 즉 Job을 만들고 편집할 수 있는 권한은 서버에서 임의 명령을 실행할 수 있는 권한과 같으므로, 신뢰하는 주체에게만 Job 작성 Scope를 준다 — [Security](./security.md) 참고.
 
 ---
 
@@ -64,7 +17,7 @@ curl -X POST http://localhost:8000/api/artifacts \
   -F name=myapp -F version=v1.2.0 -F ext=jar -F uploader=ci -F file=@build/myapp.jar
 ```
 
-**② 스크립트 배치** — allowlist에 등록한 절대 경로에 둔다. 스크립트가 **놓이는 위치**와 **실행될 때의 작업 디렉터리**는 별개다: 파일은 `/opt/taskflow/scripts/`에 있지만 실행 시 cwd는 기본값 `storage/runtime`이므로, 아래 예제의 `./app.jar`는 `storage/runtime/app.jar`로 생긴다.
+**② 스크립트 배치** — `cmd`에 적을 절대 경로에 둔다. 스크립트가 **놓이는 위치**와 **실행될 때의 작업 디렉터리**는 별개다: 파일은 `/opt/taskflow/scripts/`에 있지만 실행 시 cwd는 기본값 `storage/runtime`이므로, 아래 예제의 `./app.jar`는 `storage/runtime/app.jar`로 생긴다.
 
 ```bash
 # /opt/taskflow/scripts/deploy.sh
@@ -108,11 +61,10 @@ curl -X POST http://localhost:8000/api/jobs/deploy-app/runs \
 
 | 단계 | 확인할 것 | 빠뜨리면 |
 |---|---|---|
-| ① allowlist | 실행할 명령이 `allowlist.yaml`에 있고 백엔드를 재시작했는가 | Job 저장 시 `400 argv not in allowlist` |
-| ② 스크립트 위치 | allowlist에 적은 절대 경로에 파일이 실제로 있는가 | `exit 127 executable not found` |
-| ③ alias 선언 | `consumes_artifacts`에 alias가 있는가 | `ARTIFACT_*`가 주입되지 않음 (조용히 빈 변수) |
-| ④ cmd | 환경변수를 스크립트 **안에서** 읽는가 | `$ARTIFACT_...`가 문자열 그대로 전달됨 |
-| ⑤ 판정 | 성공 조건이 exit code만으로 충분한가 | 실패를 성공으로 오판 |
+| ① 스크립트 위치 | `cmd`에 적은 절대 경로에 파일이 실제로 있는가 | `exit 127 executable not found` |
+| ② alias 선언 | `consumes_artifacts`에 alias가 있는가 | `ARTIFACT_*`가 주입되지 않음 (조용히 빈 변수) |
+| ③ cmd | 환경변수를 스크립트 **안에서** 읽는가 | `$ARTIFACT_...`가 문자열 그대로 전달됨 |
+| ④ 판정 | 성공 조건이 exit code만으로 충분한가 | 실패를 성공으로 오판 |
 
 ---
 
@@ -234,6 +186,8 @@ alias 규칙은 `^[A-Za-z][A-Za-z0-9_]*$`이고 대소문자를 무시해 중복
 
 없는 경로를 주면 `exit 126 cwd not found: …`로 실패한다. `cd`·`pushd`·`popd`는 step 명령으로 쓸 수 없다(저장 시 거부) — 디렉터리 이동은 `cwd`로 표현한다.
 
+> **스크립트는 절대 경로로 적는다.** step의 `cwd`는 Job 작성자가 정하는 값이고 비어 있지 않은 문자열인지만 검증될 뿐 경로 값에는 아무 제약이 없으므로, `["/bin/bash", "deploy.sh"]`처럼 상대 경로로 적으면 그 step의 `cwd`에 우연히 같은 이름의 스크립트가 있을 때 그것이 실행된다 — `{"cmd": ["/bin/bash", "deploy.sh"], "cwd": "/tmp/무엇이든"}`도 그대로 통과한다. 절대 경로(`/opt/taskflow/scripts/deploy.sh`)로 적어야 실행할 파일이 하나로 고정된다.
+
 ---
 
 ## 4. 안티패턴
@@ -292,7 +246,8 @@ run_job(
 
 ## 6. 배포 전 점검
 
-- [ ] 실행할 명령이 allowlist에 있고, 필요 이상으로 넓지 않은가
+- [ ] 스크립트를 절대 경로로 등록했는가 (상대 경로는 임의 디렉터리의 동명 파일을 실행할 위험이 있다)
+- [ ] 이 Job에 편집 권한을 가진 주체가 신뢰할 수 있는 대상으로 좁혀져 있는가
 - [ ] 스크립트가 `set -euo pipefail`로 시작하는가 (중간 실패를 삼키지 않도록)
 - [ ] 아티팩트를 복사한 뒤 다루는가
 - [ ] 성공 판정이 exit code만으로 충분한가, `success_contains`가 필요한가
@@ -306,5 +261,5 @@ run_job(
 
 - [Artifacts](./artifacts.md) — 업로드·환경변수·버전 고정의 동작 원리
 - [Getting Started](./getting-started.md) — 설치와 첫 Job
-- [Security](./security.md) — allowlist 설계, 시크릿 마스킹, 감사 로그
+- [Security](./security.md) — 정책 설계, 시크릿 마스킹, 감사 로그
 - [Troubleshooting](./troubleshooting.md) — 증상별 해결

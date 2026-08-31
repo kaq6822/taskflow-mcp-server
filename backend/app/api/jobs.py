@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.engine.dag import DagValidationError, validate_steps
-from app.engine.policies import AllowlistError, check_allowlist, check_forbidden_state_command
+from app.engine.policies import PolicyError, check_forbidden_state_command
 from app.engine.run_engine import get_engine
 from app.models import Job, Run
 from app.schemas import JobCreate, JobOut, JobUpdate
@@ -43,12 +43,11 @@ async def create_job(
         validate_steps(steps_raw)
         for s in steps_raw:
             check_forbidden_state_command(s["cmd"])
-            check_allowlist(s["cmd"])
-    except (DagValidationError, AllowlistError, ArtifactValidationError) as e:
+    except (DagValidationError, PolicyError, ArtifactValidationError) as e:
         await append_event(
             session,
             who=_actor(request),
-            kind="policy.violation" if isinstance(e, AllowlistError) else "job.create",
+            kind="policy.violation" if isinstance(e, PolicyError) else "job.create",
             target=body.id,
             src="web",
             ip=_ip(request),
@@ -118,12 +117,11 @@ async def update_job(
             validate_steps(steps_raw)
             for s in steps_raw:
                 check_forbidden_state_command(s["cmd"])
-                check_allowlist(s["cmd"])
-        except (DagValidationError, AllowlistError) as e:
+        except (DagValidationError, PolicyError) as e:
             await append_event(
                 session,
                 who=_actor(request),
-                kind="policy.violation" if isinstance(e, AllowlistError) else "job.edit",
+                kind="policy.violation" if isinstance(e, PolicyError) else "job.edit",
                 target=job_id,
                 src="web",
                 ip=_ip(request),
