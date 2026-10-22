@@ -52,8 +52,8 @@ make dev
 2. Builder에서 다음을 입력
    - **ID**: `hello` (kebab-case, 소문자)
    - **Name**: `Hello Demo`
-   - **Step 1**: argv = `["echo", "hello from taskflow"]`, timeout = 10
-   - **Step 2**: argv = `["sleep", "1"]`, deps = `greet`, timeout = 5
+   - **Step 1** (기본으로 들어 있는 `greet`): argv = `["echo", "hello from taskflow"]`, timeout = 10
+   - **Step 2** (`+ Step 추가`로 추가, id `wait`): argv = `["sleep", "1"]`, deps = `greet`, timeout = 5
 3. `저장` → Dashboard로 이동
 4. `hello` 행의 `▷ 실행` 클릭
 5. Topbar에 `LIVE` 칩 표시 → Monitor 화면에서 실제 stdout이 SSE로 스트림됨
@@ -91,6 +91,17 @@ Step은 기본적으로 `TASKFLOW_STEP_CWD`(`./storage/runtime`)에서 실행됩
 ```
 
 `failure_contains` 중 하나라도 출력에 포함되면 Step은 `FAILED`입니다. `success_contains`는 exit 0 이후 모두 포함되어야 하며, 하나라도 누락되면 `FAILED`입니다.
+
+## 실행 파라미터와 출력값
+
+실행할 때마다 달라지는 값(브랜치 등)은 Job에 **Run 파라미터**로 선언하고, step이 알아낸 값(배포한 커밋 등)은 **출력값**으로 Run에 남길 수 있습니다.
+
+- **Builder → Run params (optional)** — 이름 · 기본값 · 패턴을 입력합니다. 기본값을 비우면 필수 파라미터가 되고, 입력하는 즉시 step이 받게 될 `PARAM_<NAME>` 목록이 표시됩니다.
+- **▷ 실행** — 파라미터를 선언한 Job은 실행 전에 값 입력 창이 뜹니다(기본값이 미리 채워짐). 거부된 값은 `INVALID_PARAM` 토스트와 함께 창이 유지됩니다. 파라미터가 없는 Job은 바로 실행됩니다.
+- **Step 로그 화면** — 상단 상태 칩 옆에 그 Run이 쓴 파라미터(`branch=…`)와 기록된 출력값(`→ commit=…`)이 칩으로 표시됩니다. **재실행**은 그 Run의 파라미터 값으로 입력 창을 엽니다.
+- **Job 상세** — 메타 카드에 선언된 파라미터(`→ PARAM_<NAME>`)가, Runs 표의 `Outputs` 열에 각 Run의 출력값이 보입니다.
+
+step 쪽 사용법은 [Run 파라미터](./run-params.md)와 [Run 출력값](./run-outputs.md)을 참고하세요.
 
 ## 다음 단계
 

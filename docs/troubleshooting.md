@@ -18,6 +18,20 @@ backend/.venv/bin/pip install "greenlet>=3.0"
 
 `backend/pyproject.toml`에 이미 명시되어 있으므로 `make setup` 재실행으로도 해결됩니다.
 
+### 업그레이드 후 `no such column: jobs.params` / `runs.params` / `runs.outputs`
+
+새 버전의 DB 마이그레이션(`0003_run_params`, `0004_run_outputs` 등)이 적용되지 않았습니다. 서버 기동 시의 테이블 자동 생성은 기존 테이블에 컬럼을 추가하지 않습니다.
+
+```sh
+make migrate
+```
+
+후 서버를 재기동하세요. [Operations — 업그레이드](./operations.md#업그레이드) 참고.
+
+### 업그레이드했는데 UI가 그대로임 (`make start` / `make start-bg`)
+
+프로덕션 모드는 `frontend/dist`를 서빙하며, `dist`가 이미 있으면 다시 빌드하지 않습니다. `make build` 후 재기동하세요.
+
 ### `curl http://127.0.0.1:5173`이 실패
 
 Vite 기본 dev 서버는 `localhost` (IPv6 우선)만 바인드합니다.
@@ -28,11 +42,13 @@ Vite 기본 dev 서버는 `localhost` (IPv6 우선)만 바인드합니다.
 
 ## MCP
 
-### MCP 호출이 `400 Bad Request`로 실패
+### MCP 호출이 `406 Not Acceptable` / `415` / `400`으로 실패
 
-모든 MCP 호출(최초 `initialize` 제외)은 `Mcp-Session-Id` 헤더를 요구합니다. `initialize` 응답 헤더에서 값을 추출해 이후 호출에 포함시켜야 합니다.
+- `406` — `Accept: application/json, text/event-stream` 헤더가 빠졌습니다.
+- `415` — `Content-Type: application/json`이 아닙니다.
+- `400` — body가 올바른 JSON-RPC 메시지가 아닙니다.
 
-또한 `Accept: application/json, text/event-stream` 헤더도 필요합니다. 자세한 curl 예시는 [MCP API §3](./mcp-api.md#3-json-rpc로-직접-호출).
+서버는 stateless 모드라 `Mcp-Session-Id`는 필요 없습니다. 자세한 curl 예시는 [MCP API §3](./mcp-api.md#3-json-rpc로-직접-호출).
 
 ### MCP 호출이 `401 UNAUTH`
 
@@ -42,16 +58,37 @@ Vite 기본 dev 서버는 `localhost` (IPv6 우선)만 바인드합니다.
 
 Key 목록·상태는 UI `MCP Key` 화면 또는 `GET /api/keys`로 확인.
 
-### MCP 호출이 `403 DENY`
+### MCP tool 호출 결과가 `DENY: scope '…' not permitted`
 
-Key의 scope가 도구 요구 scope와 불일치합니다. 예:
+HTTP는 200이지만 tool 결과가 오류(`isError: true`)입니다. Key의 scope가 도구 요구 scope와 불일치합니다. 예:
 
 - `read:jobs`만 가진 Key로 `run_job` 호출 → DENY
 - `run:foo`만 가진 Key로 `run_job(job_id="bar")` 호출 → DENY
 
 Scope 매칭 규칙은 [MCP API §2](./mcp-api.md#2-scope-규칙).
 
+### MCP로 실행한 Run이 UI Monitor/SSE에서 실시간으로 보이지 않음
+
+MCP로 트리거한 Run은 MCP 서버 프로세스 안에서 실행되고, 실시간 이벤트도 그 프로세스에만 있습니다. Backend의 `GET /api/runs/{id}/stream`에는 heartbeat만 옵니다. 상태와 결과는 DB에 기록되므로 `GET /api/runs/{id}`·MCP `get_run`으로 확인하고, 로그는 `GET /api/runs/{id}/logs/{step_id}`로 보세요.
+
 ## 실행
+
+### Run 트리거가 `UNKNOWN_PARAM` / `INVALID_PARAM`으로 거부됨
+
+- `UNKNOWN_PARAM` — Job이 선언하지 않은 이름을 보냈습니다. 파라미터를 선언하지 않은 Job에 `params`를 보내도 이 오류입니다. Job의 `params`(`GET /api/jobs/{id}`, MCP `get_job`)를 확인하세요.
+- `INVALID_PARAM` — 기본값 없는 파라미터를 빠뜨렸거나, 값이 `pattern` 전체와 일치하지 않거나, 문자열이 아니거나, 빈 값·앞뒤 공백·제어문자·1024자 초과입니다. 메시지에 어느 파라미터가 왜 거부됐는지 나옵니다.
+
+자세한 규칙은 [Run 파라미터](./run-params.md).
+
+### `::output`을 찍었는데 Run의 `outputs`가 비어 있음
+
+step 로그에서 경고를 확인하세요.
+
+- `output ignored: …` — 형식 오류(`key=value` 아님, key 규칙 위반, 빈 값·앞뒤 공백·제어문자·1024자 초과)
+- `outputs discarded: step ended FAILED` — 출력값은 SUCCESS로 끝난 step의 것만 기록됩니다
+- 아무 경고도 없다면 stderr로 찍었거나(`echo … >&2`) 줄 맨 앞이 `::output `으로 시작하지 않는 경우입니다
+
+자세한 규칙은 [Run 출력값](./run-outputs.md).
 
 ### `cd /path` Step이 `policy.violation`으로 거부됨
 
@@ -100,10 +137,10 @@ DB row가 수동으로 변조되었거나 timezone 처리 버그일 수 있습�
 
 ```sh
 curl http://localhost:8000/api/audit/verify
-# { "ok": false, "broken_at": 128 }
+# FAIL: broken at id=128
 ```
 
-128번째 이벤트부터 체인이 깨진 것입니다. 정상 운영 상태라면 절대 발생하지 않습니다. 대응:
+id 128 이벤트부터 체인이 깨진 것입니다. 정상 운영 상태라면 절대 발생하지 않습니다. 대응:
 
 1. `GET /api/audit?limit=200`으로 128번 근처 이벤트 덤프
 2. 변조 의심 시 DB 백업 즉시 확보 + 인시던트 기록

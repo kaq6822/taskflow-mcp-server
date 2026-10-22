@@ -30,6 +30,8 @@ make start        # backend가 SPA+API 통합 서빙(:8000), mcp(:7391) 별도
 
 접속: `http://localhost:8000` (Vite 불필요, same-origin이라 CORS 이슈 없음). `Ctrl+C`로 정지.
 
+`make start`/`make start-bg`는 `frontend/dist/index.html`이 **없을 때만** 자동으로 빌드합니다. 이미 `dist`가 있으면 그대로 서빙하므로, 프론트엔드가 바뀐 버전으로 올린 뒤에는 `make build`를 직접 실행해야 합니다([업그레이드](#업그레이드)).
+
 ### C. 프로덕션 (background, 로그아웃 후에도 유지)
 
 ```sh
@@ -53,6 +55,7 @@ make stop         # 정지 (pidfile + pkill fallback)
 | 프로덕션 빌드 | `make build` | `frontend/dist` 생성 |
 | 프로덕션 실행 | `make start` | backend가 SPA+API 통합 서빙, MCP 분리 |
 | 테스트 | `make test` | pytest |
+| DB 마이그레이션 | `make migrate` | `alembic upgrade head` — 업그레이드 후 필수 |
 | DB 초기화 | `make reset` | SQLite + storage 삭제 후 migrate |
 | 전체 제거 | `make clean` | venv / node_modules / DB |
 
@@ -68,24 +71,22 @@ make start-mcp     # production MCP
 
 ## 네트워크 바인딩
 
-기본 `make dev`는 **개발자 로컬에서만** 접근 가능하도록 Vite를 `localhost`에 바인드합니다. 원격 호스트(같은 LAN 내 다른 기기 등)에서 쓰려면:
+기본 `make dev`는 Vite를 `localhost`에 바인드합니다. 단 **Backend·MCP는 기본값이 `0.0.0.0`**이라 `make dev`에서도 네트워크에서 접근 가능합니다 — 로컬 전용으로 쓰려면 `make dev API_HOST=127.0.0.1 MCP_HOST=127.0.0.1`. 원격 호스트(같은 LAN 내 다른 기기 등)에서 UI까지 쓰려면:
 
 ```sh
 # 1) LAN 바인딩으로 실행
 make dev-lan TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173
 
-# 2) 또는 환경변수로 세밀 제어
-TASKFLOW_FRONTEND_HOST=0.0.0.0 \
-TASKFLOW_API_HOST=0.0.0.0 \
-TASKFLOW_MCP_HOST=0.0.0.0 \
-TASKFLOW_API_HOST_PUBLIC=192.168.1.10 \
-TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173 \
-  make dev
+# 2) 또는 Make 변수로 세밀 제어
+make dev FRONTEND_HOST=0.0.0.0 API_HOST=0.0.0.0 MCP_HOST=0.0.0.0 \
+  TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173
 ```
 
-- `TASKFLOW_FRONTEND_HOST` — Vite 바인딩 인터페이스
-- `TASKFLOW_API_HOST` / `TASKFLOW_MCP_HOST` — FastAPI / MCP 바인딩 인터페이스
-- `TASKFLOW_API_HOST_PUBLIC` — 브라우저/외부 클라이언트가 API에 접근할 때 쓰는 호스트 (Vite proxy target 구성용)
+make 타깃은 바인딩을 **Make 변수**(`API_HOST`/`API_PORT`/`MCP_HOST`/`MCP_PORT`/`FRONTEND_HOST`/`FRONTEND_PORT`)로 받아 각 프로세스에 넘깁니다. 이때 `.env`나 셸의 `TASKFLOW_*_HOST`/`TASKFLOW_*_PORT`는 Make 변수 값으로 덮어써지므로 효과가 없습니다.
+
+- `FRONTEND_HOST` — Vite 바인딩 인터페이스 (Vite에는 `TASKFLOW_FRONTEND_HOST`로 전달)
+- `API_HOST` / `MCP_HOST` — FastAPI(uvicorn `--host`) / MCP(`TASKFLOW_MCP_HOST`) 바인딩 인터페이스
+- `TASKFLOW_API_HOST_PUBLIC` — Vite proxy target 호스트. `make dev-frontend`는 이를 `API_HOST` 값으로 설정합니다
 - `TASKFLOW_CORS_ORIGINS` — **콤마 구분** origin 화이트리스트. 원격 브라우저가 `/api`를 직접 호출할 때 반드시 포함. Vite 프록시 경유 호출은 same-origin이라 CORS 영향 없음. dev에서 `*` 한 개만 넣으면 allow-all.
 
 > ⚠️ UI에는 현재 로그인 게이트가 없고, `/api/*` 라우트에도 인증이 없습니다. 외부에 노출하면 누구나 Job을 만들고 실행할 수 있으며, step의 `cmd`에 실행 가능한 명령 제한이 없으므로([Security](./security.md) 참고) 이는 곧 **서버에서 임의 명령을 실행할 수 있다**는 뜻입니다. 신뢰된 네트워크에서만 사용하세요.
@@ -125,7 +126,27 @@ TASKFLOW_ENV=production \
 
 리버스 프록시(Nginx/Caddy)를 쓰는 경우 `/`와 `/api/*`를 backend 포트로, `/mcp`를 MCP 포트로 각각 프록시하면 됩니다. HTTPS 종단도 리버스 프록시 계층에서 처리하는 것을 권장.
 
+Backend와 MCP 서버는 각자 Run Engine을 내장한 별도 프로세스입니다. MCP `run_job`으로 시작한 Run은 MCP 서버 프로세스에서 실행되므로, MCP 서버를 내리면 그 프로세스에서 진행 중이던 Run도 함께 중단됩니다. 프로세스가 내려가며 끊긴 Run(Backend 재기동 포함)은 DB에 `RUNNING`으로 남으므로 `POST /api/runs/{id}/cancel` 또는 UI의 정지 버튼으로 정리하세요.
+
+## 업그레이드
+
+새 버전으로 코드를 갱신한 뒤에는 다음을 순서대로 수행합니다.
+
+```sh
+git pull
+make setup-backend   # 의존성이 바뀐 경우
+make migrate         # DB 스키마 갱신 (alembic upgrade head)
+make build           # 프론트엔드가 바뀐 경우 — start/start-bg는 기존 dist를 재빌드하지 않음
+make stop && make start-bg   # 또는 make start
+```
+
+- **`make migrate`는 필수입니다.** 서버 기동 시의 테이블 자동 생성은 새 테이블만 만들고 기존 테이블에 컬럼을 추가하지 않습니다. 예를 들어 Run 파라미터(`0003_run_params` — `jobs.params`·`runs.params`)와 Run 출력값(`0004_run_outputs` — `runs.outputs`)은 마이그레이션 없이 쓰면 `no such column` 오류가 납니다.
+- 마이그레이션은 `backend/alembic/versions/`에 있으며 `TASKFLOW_DB_URL`이 가리키는 DB에 적용됩니다. 적용 전 `backend/taskflow.db`를 백업해 두세요.
+- `make dev`는 Vite가 소스를 직접 서빙하므로 `make build`가 필요 없습니다.
+
 ## 환경변수 참조
+
+`TASKFLOW_*_HOST`/`TASKFLOW_*_PORT`는 프로세스를 수동으로 실행할 때의 값입니다. make 타깃은 위 [네트워크 바인딩](#네트워크-바인딩)처럼 Make 변수로 덮어씁니다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -133,8 +154,8 @@ TASKFLOW_ENV=production \
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | 아티팩트·로그 루트 |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step `cwd` 미지정 시 사용할 기본 subprocess cwd |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `127.0.0.1` 지정 |
-| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩. uvicorn은 이 변수를 읽지 않고 make가 넘기는 `--host`/`--port`(`API_HOST`/`API_PORT`, 기본 `0.0.0.0`/`8000`)를 씁니다. `TASKFLOW_API_PORT`는 Vite 프록시 대상 포트로 쓰입니다. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `API_HOST=127.0.0.1` 지정 |
+| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 (`python -m app.mcp_server`가 읽음) |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | `run_job(sync)` 최대 대기 |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite 바인딩 |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | 외부에서 본 API 호스트 (Vite proxy target) |

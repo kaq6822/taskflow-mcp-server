@@ -269,4 +269,4 @@ Job의 `consumes_artifacts`에 alias가 선언돼 있는지 확인한다. 업로
 - [Getting Started](./getting-started.md) — 설치와 첫 Job 만들기
 - [REST API](./rest-api.md) — 엔드포인트 전체 목록
 - [MCP API](./mcp-api.md) — Agent 도구와 scope
-- [Security](./security.md) — 정책 설계, 시크릿 마스킹, 감사 로그
+- [Security](./security.md) — 정책 설계, `SECRET_*`/예약 환경변수, 감사 로그

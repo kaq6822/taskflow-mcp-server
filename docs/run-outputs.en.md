@@ -19,7 +19,7 @@ echo "::output branch=$PARAM_BRANCH"
 | key | `^[A-Za-z][A-Za-z0-9_]*$` |
 | value | Everything after the first `=` (a trailing `\r` is dropped). Empty values, leading/trailing whitespace, control characters (C0/C1, U+2028/2029), replacement characters (U+FFFD) and values over 1024 chars are ignored with an `output ignored` warning in the log |
 | Overwrites | Printing the same key again (same step or a later step) keeps the last value, with an `overwritten` warning when it changes |
-| Failed steps | **Only a step that ends SUCCESS gets its outputs recorded.** Values from failed, timed-out or cancelled steps are discarded with an `outputs discarded` warning — so a run that succeeds through `CONTINUE` or `RETRY` never carries a failed attempt's values |
+| Failed steps | **Only a step that ends SUCCESS gets its outputs recorded.** Values from failed or timed-out steps are discarded with an `outputs discarded` warning (a step interrupted by cancellation records nothing either) — so a run that succeeds through `CONTINUE` or `RETRY` never carries a failed attempt's values |
 
 Print outputs near the end of a step. Arbitrary content streamed to stdout afterwards (commit messages, file contents) could contain an `::output` line that overwrites the value.
 

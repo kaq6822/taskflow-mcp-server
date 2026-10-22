@@ -18,17 +18,19 @@ flowchart TB
     UI[Frontend · :5173<br/>Vite + React]
     API[FastAPI Backend · :8000<br/>REST + SSE]
     MCP[MCP Server · :7391<br/>Streamable HTTP + Bearer]
-    ENG[asyncio Run Engine<br/>subprocess_exec, shell=False]
+    ENG[asyncio Run Engine<br/>subprocess argv, shell=False]
     DB[(SQLite · taskflow.db)]
     FS[storage/ · logs · artifacts]
 
     UI -- HTTP/SSE --> API
     Agent -- MCP --> MCP
-    MCP --> API
     API --> ENG
+    MCP --> ENG
     ENG --> DB
     ENG --> FS
 ```
+
+The backend and the MCP server are separate processes. Each embeds its own Run Engine, and both share the same SQLite DB and `storage/`. MCP calls do not go through the REST API.
 
 ## Quickstart
 
@@ -49,17 +51,19 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 
 ## Key Features
 
-- **AI Agent First** — MCP endpoint lets agents trigger jobs directly; results returned as structured schema (`status`, `steps[]`, `failed_step`, `logs_uri`, etc.)
-- **Controlled execution** — `shell=False` (argv list only, no shell string is ever interpreted), controlled cwd (`TASKFLOW_STEP_CWD` default + per-step `cwd`), secret env var masking. A step's `cmd` is not restricted to a fixed set of commands — see [Security](./docs/security.en.md) for what that means
+- **AI Agent First** — MCP endpoint lets agents trigger jobs directly; results returned as structured schema (`status`, `steps[]`, `failed_step`, `params`, `outputs`, `logs_uri`, etc.)
+- **Run params** — a Job declares `params` (name · default · pattern) so each run can take values such as a branch; steps receive them as `PARAM_<NAME>` env vars, and the resolved values are pinned on the run ([Run Params](./docs/run-params.en.md))
+- **Run outputs** — a step that prints `::output key=value` on stdout records the value on the run (`outputs`), so "the commit of the last successful deploy" is one `list_runs` call away ([Run Outputs](./docs/run-outputs.en.md))
+- **Controlled execution** — `shell=False` (argv list only, no shell string is ever interpreted), controlled cwd (`TASKFLOW_STEP_CWD` default + per-step `cwd`), `cd`/`pushd`/`popd` rejected. A step's `cmd` is not restricted to a fixed set of commands and the Job-authoring REST API has no authentication — see [Security](./docs/security.en.md) for what that means
 - **Observable** — Real-time stdout/stderr via SSE, output-text assertions for Step success/failure, Workflow DAG visualization (DAG · List · Timeline views)
 - **Immutable audit** — Append-only hash-chained audit log; integrity verification via `/api/audit/verify`
-- **MCP control** — Per-key scopes (`run:<job-id>` / `read:*` / `write:uploads`, etc.) + token bucket rate-limit + full issue/rotate/revoke audit trail
+- **MCP control** — Per-key scopes (`run:<job-id>` / `read:*` / `write:uploads`, etc.) + per-key per-minute rate-limit + issue/revoke audit trail
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [Getting Started](./docs/getting-started.en.md) | Installation · First job |
+| [Getting Started](./docs/getting-started.en.md) | Installation · First job · Step working directory (cwd) |
 | [Artifacts](./docs/artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
 | [Artifact Jobs](./docs/artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
 | [Run Params](./docs/run-params.en.md) | Passing values at trigger time (e.g. a branch) · declaring on a Job · `PARAM_*` in steps |
@@ -67,7 +71,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 | [MCP API](./docs/mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [REST API](./docs/rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [Operations](./docs/operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |
-| [Security](./docs/security.en.md) | `shell=False` · Secret masking · hash-chained audit |
+| [Security](./docs/security.en.md) | `shell=False` · Controlled cwd · `SECRET_*`/reserved env vars · hash-chained audit |
 | [Troubleshooting](./docs/troubleshooting.en.md) | Common symptoms and solutions |
 | [Design Docs](./docs/00-overview.md) | Project background · Domain rules · System spec (`00` → `03`) |
 
@@ -77,7 +81,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 make test
 ```
 
-pytest — 82 test cases; the main ones:
+pytest — the main suites:
 
 - `test_audit_chain.py` — 10-event chain intact, 1 row tampering detected
 - `test_dag.py` — topo sort, cycle detection, duplicate id/shell string rejection
@@ -85,6 +89,12 @@ pytest — 82 test cases; the main ones:
 - `test_job_policy_api.py` — arbitrary commands (`/bin/bash`, `rm`, `docker`) save fine; `cd` returns 400 and records a `policy.violation` DENY
 - `test_scope.py` — exact match / wildcard / read-only denies run
 - `test_rate_limit.py` — after 10/min burst, 11th call returns `retry_after`
+- `test_artifact_refs.py` · `test_artifact_refs_api.py` — alias resolution · `@latest` pinning · `UNKNOWN_ALIAS`/`MISMATCH`/`INVALID_ARTIFACT`/`NOT_READY`
+- `test_run_params.py` · `test_run_params_api.py` — param declaration checks · defaults · whole-value `pattern` match · `UNKNOWN_PARAM`/`INVALID_PARAM` · step `env` cannot override
+- `test_run_outputs.py` — `::output` parsing · only steps that end SUCCESS are recorded · overwrites
+- `test_worker.py` · `test_run_engine_*.py` — subprocess execution · output assertions · cancellation · run-time policy re-check
+
+Some tests assume a POSIX environment (`/bin/sh`, file permissions, etc.) and can fail on Windows for platform reasons.
 
 ## Out of Scope
 
@@ -94,6 +104,9 @@ Features intentionally excluded from the current sprint:
 - Workflow GitOps import/export
 - Notification channel configuration (use Step's notify argv instead)
 - Distributed worker scheduler (in-process, concurrency 1)
+- Cron schedule execution — a Job's `schedule` is stored and displayed only; no scheduler fires it
+- Job-level `timeout` enforcement — only per-step `timeout` is applied today
+- MCP key rotation — revoke and issue a new key instead
 - ClamAV real integration (currently stub — upload immediately READY)
 - SIEM forward pipeline (local audit only)
 - Real `ROLLBACK` policy (MVP converges to `STOP`)

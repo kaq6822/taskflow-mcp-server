@@ -57,6 +57,8 @@
 | **MCP** | AI Agent 엔드포인트 (Bearer · scope · rate-limit) |
 | **Scheduler** | cron 기반 Job 발화 |
 
+> **구현 현황:** 현재는 API 서버(REST·SSE)와 MCP 엔드포인트가 **별도 프로세스**이며, 각자 asyncio Run Engine을 내장하고 같은 SQLite DB와 `storage/`를 공유합니다. MCP 호출은 API 서버를 거치지 않고 MCP 프로세스 안에서 Run을 실행합니다. Scheduler·Queue·Worker pool은 미구현이고, Web UI 세션 인증(§4.1)도 없습니다.
+
 ## 2. MCP 인터페이스
 
 ### 2.1 MCP Tools
@@ -76,6 +78,8 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
 | `run_job(job_id, {mode, artifact_refs?, params?, idempotency_key?})` | `run:<job_id>` | sync / async / stream | Job 실행 — 모드별 동작은 `02 §10.3` |
 | `cancel_run(run_id)` | `run:<job_id>` | sync | 진행 중 Run 취소 |
 
+> **구현 현황:** `upload_artifact`의 실제 인자는 `(name, version, content_base64, ext?)`이며 `metadata`는 없습니다. `run_job`의 `mode`는 `sync`/`async`만, `subscribe_run(run_id, tail?)`은 스트림이 아니라 최근 이벤트 스냅샷을 반환하는 sync tool입니다. 현재 동작은 [MCP API §4](./mcp-api.md#4-도구-목록)가 기준입니다.
+
 ### 2.2 실행 대기 계약 (run_job 모드별)
 
 | Mode | HTTP 상태 | 반환 시점 | 응답 본문 |
@@ -84,6 +88,8 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
 | `sync` (timeout 초과) | 200 | `MCP_MAX_SYNC`(기본 600s) 도달 | `{ run_id, status: 'RUNNING', degraded_to: 'async' }` |
 | `async` | 202 | 즉시 | `{ run_id, status: 'RUNNING', poll_url }` |
 | `stream` | 101 (Upgrade) | 연결 수립 시점 | step 이벤트 (§2.4) |
+
+> **구현 현황:** MCP 응답은 모드와 무관하게 HTTP 200의 JSON-RPC 응답이며, 위 본문은 tool 결과(`content[0].text`)에 담깁니다. `stream` 모드는 미구현입니다.
 
 ### 2.3 Agent 응답 스키마 (sync / get_run)
 
@@ -110,6 +116,8 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
 }
 ```
 
+> **구현 현황:** `audit_event_ids`는 응답에 포함되지 않습니다. `list_runs`·`cancel_run`도 같은 스키마를 반환합니다.
+
 ### 2.4 Stream 이벤트 포맷
 
 ```
@@ -117,8 +125,10 @@ event: run.started     data: { run_id, job_id, at, artifacts, params }
 event: step.started    data: { step_id, cmd, timeout }
 event: step.log        data: { step_id, ts, lvl, text }
 event: step.finished   data: { step_id, state, elapsed_sec }
-event: run.finished    data: { status, failed_step?, err_message?, duration_sec }
+event: run.finished    data: { run_id, status, failed_step?, err_message?, duration_sec }
 ```
+
+> **구현 현황:** 이 이벤트는 MCP `stream` 모드가 아니라 REST SSE(`GET /api/runs/{id}/stream`)로 제공되며, Run을 실행한 프로세스 안에서만 발행됩니다 — MCP로 트리거한 Run의 이벤트는 REST SSE로 받을 수 없습니다.
 
 ### 2.5 MCP 오류 응답
 
@@ -138,6 +148,8 @@ event: run.finished    data: { status, failed_step?, err_message?, duration_sec 
 | 202 `SCANNING` | 아티팩트 스캔 중 | `retry_after` 포함 |
 
 Job 자체의 FAILED/TIMEOUT은 HTTP 에러가 아닌 **응답 body의 `status`**로 전달한다.
+
+> **구현 현황:** MCP 경로에서 HTTP 상태로 오는 것은 `401 UNAUTH`와 `429 RATE_LIMIT`뿐입니다. 나머지 코드(`DENY`·`NOT_FOUND`·`CONFLICT`·`NOT_RUNNING`·아티팩트·파라미터 오류)는 HTTP 200 JSON-RPC 응답 안의 tool 오류 텍스트 `<CODE>: <설명>`로 반환됩니다. `202 SCANNING`은 미구현입니다(스캔 stub, `READY`가 아니면 `NOT_READY`). 위 HTTP 상태 매핑은 REST `POST /api/jobs/{id}/runs`에 적용됩니다 — [REST API](./rest-api.md#오류-코드), [MCP API §4.1](./mcp-api.md#41-오류-응답).
 
 ## 3. 성능 · 확장성 요구
 
@@ -162,6 +174,8 @@ Job 자체의 FAILED/TIMEOUT은 HTTP 에러가 아닌 **응답 body의 `status`*
 - `run:<job-id>`는 해당 Job에 대해서만 유효. `run:*`는 모든 Job.
 - 매칭 우선순위: `run:<job-id>` > `run:*` > read-only scope.
 
+> **구현 현황:** Web UI 세션 인증과 REST API 인증은 미구현입니다(`/api/*` 무인증). scope는 MCP 경로에만 적용되며, 요구 scope와 정확히 같거나 같은 네임스페이스의 `<ns>:*`를 가지면 허용합니다.
+
 ### 4.3 Worker 정책 (enforced)
 
 - `shell=False`, 제어된 `cwd`(`TASKFLOW_STEP_CWD` 기본 + Step별 `cwd`).
@@ -176,6 +190,8 @@ Job 자체의 FAILED/TIMEOUT은 HTTP 에러가 아닌 **응답 body의 `status`*
 - Audit row는 `prev_hash` + `content_hash`로 체인 연결.
 - 정기적 체인 검증. 불일치 시 알람.
 - SIEM forward는 TLS 보호 채널.
+
+> **구현 현황:** 체인 검증은 `GET /api/audit/verify` 수동 호출로만 이루어지며, 정기 검증·알람·SIEM forward는 미구현입니다.
 
 ## 5. 운영 요구
 

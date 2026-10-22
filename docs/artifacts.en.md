@@ -269,4 +269,4 @@ No limit, as long as the aliases differ.
 - [Getting Started](./getting-started.en.md) — Installation and your first Job
 - [REST API](./rest-api.en.md) — Full endpoint list
 - [MCP API](./mcp-api.en.md) — Agent tools and scopes
-- [Security](./security.en.md) — `shell=False`, secret masking, audit log
+- [Security](./security.en.md) — `shell=False`, `SECRET_*`/reserved env vars, audit log

@@ -52,8 +52,8 @@ Open **http://localhost:5173** in your browser. On first run, the backend prints
 2. In the Builder, fill in:
    - **ID**: `hello` (kebab-case, lowercase)
    - **Name**: `Hello Demo`
-   - **Step 1**: argv = `["echo", "hello from taskflow"]`, timeout = 10
-   - **Step 2**: argv = `["sleep", "1"]`, deps = `greet`, timeout = 5
+   - **Step 1** (the prefilled `greet`): argv = `["echo", "hello from taskflow"]`, timeout = 10
+   - **Step 2** (add with `+ Add Step`, id `wait`): argv = `["sleep", "1"]`, deps = `greet`, timeout = 5
 3. `Save` → returns to Dashboard
 4. Click `▷ Run` on the `hello` row
 5. `LIVE` chip appears in the topbar → Monitor screen streams actual stdout via SSE
@@ -91,6 +91,17 @@ The default success condition is still `exit_code == 0`. To additionally check s
 ```
 
 If any `failure_contains` string appears in output, the step becomes `FAILED`. `success_contains` is checked after exit 0 and all strings must appear; if any are missing, the step becomes `FAILED`.
+
+## Run Params and Run Outputs
+
+Values that change from run to run (a branch, say) are declared on the Job as **run params**; values a step finds out (the commit it deployed, say) can be recorded on the run as **outputs**.
+
+- **Builder → Run params (optional)** — enter name · default · pattern. An empty default makes the param required, and the `PARAM_<NAME>` variables steps will receive are listed as you type.
+- **▷ Run** — a Job that declares params opens a prompt for the values first (defaults prefilled). A rejected value shows an `INVALID_PARAM` toast and keeps the prompt open. A Job without params runs immediately.
+- **Step logs screen** — next to the status chip, the header shows the params the run used (`branch=…`) and the outputs it recorded (`→ commit=…`) as chips. **Re-run** opens the prompt with that run's param values.
+- **Job detail** — the meta card lists the declared params (`→ PARAM_<NAME>`), and the Runs table's `Outputs` column shows each run's outputs.
+
+For the step side, see [Run Params](./run-params.en.md) and [Run Outputs](./run-outputs.en.md).
 
 ## Next Steps
 
