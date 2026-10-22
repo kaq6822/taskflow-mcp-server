@@ -53,6 +53,8 @@ CI/Agent가 빌드 산출물(.tar.gz/.jar/.zip)을 TaskFlow에 업로드 → 특
 - MCP 엔드포인트 (Key, scope, rate-limit)
 - 불변 감사 로그 (hash-chained, SIEM forward)
 
+> **구현 현황:** 현재 MVP에는 cron 스케줄러, Worker pool(엔진은 프로세스 내 asyncio), 아티팩트 서명 검증, SIEM forward가 없습니다. 구현 범위는 [README의 "범위에서 제외"](../README.md#범위에서-제외)를 참고하세요.
+
 ### 5.2 Out-of-scope (비목표)
 
 - 복잡한 RBAC/ABAC 권한 매트릭스 (scope 기반으로 단순화)

@@ -2,7 +2,7 @@
 
 [Artifacts 가이드](./artifacts.md)가 "아티팩트가 어떻게 동작하는가"를 다룬다면, 이 문서는 **"그래서 Job을 어떻게 짜는가"** 에 답한다. 복사해서 고쳐 쓸 수 있는 골격과 패턴을 모았다.
 
-step의 `cmd`에 적은 argv는 `shell=False`로 그대로 execve되며, 실행할 명령 자체에는 제한이 없다. 즉 Job을 만들고 편집할 수 있는 권한은 서버에서 임의 명령을 실행할 수 있는 권한과 같으므로, 신뢰하는 주체에게만 Job 작성 Scope를 준다 — [Security](./security.md) 참고.
+step의 `cmd`에 적은 argv는 `shell=False`로 그대로 execve되며, 실행할 명령 자체에는 제한이 없다. 즉 Job을 만들고 편집할 수 있는 권한은 서버에서 임의 명령을 실행할 수 있는 권한과 같다. Job 작성 REST API에는 인증이 없고 MCP Key scope로도 제한되지 않으므로, 네트워크 접근 제어로 그 API에 닿을 수 있는 주체를 신뢰하는 대상으로 좁혀야 한다 — [Security](./security.md) 참고.
 
 ---
 
@@ -135,7 +135,7 @@ step에 지정하면 Job 기본값을 덮어쓴다.
 | 값 | 동작 |
 |---|---|
 | `STOP` | 이후 step을 `SKIPPED`로 두고 run을 FAILED로 종료 (기본값) |
-| `CONTINUE` | 실패를 기록하지 않고 다음 step으로 진행 |
+| `CONTINUE` | 그 step은 `FAILED`로 남지만 run을 실패로 전환하지 않고 다음 step으로 진행 |
 | `RETRY` | **1회만** 재시도. 재시도가 성공하면 첫 실패 기록을 지운다 |
 | `ROLLBACK` | ⚠️ 현재 구현은 `STOP`과 **동일하게** 동작한다 |
 
@@ -209,7 +209,7 @@ alias 규칙은 `^[A-Za-z][A-Za-z0-9_]*$`이고 대소문자를 무시해 중복
 
 CI가 빌드 산출물을 올리고, Agent가 버전을 명시해 실행하는 구성이다.
 
-**① CI: 업로드** (`write:uploads` scope)
+**① CI: 업로드** (REST — 인증 없음. MCP `upload_artifact`로 올린다면 `write:uploads` scope)
 
 ```bash
 curl -fsS -X POST "$TASKFLOW/api/artifacts" \
@@ -238,9 +238,13 @@ run_job(
 {
   "status": "SUCCESS",
   "artifact_refs": {"jar": {"ref": "uploads://myapp@a1b2c3d", "sha256": "…"}},
+  "params": {},
+  "outputs": {},
   "steps": [{"id": "deploy", "state": "SUCCESS", "elapsed_sec": 12.4}]
 }
 ```
+
+배포 대상 환경처럼 실행마다 바뀌는 값은 [Run 파라미터](./run-params.md)(`params`)로 넘기고, 스크립트가 알아낸 값(실제 배포한 버전 등)은 `echo "::output version=$ARTIFACT_JAR_VERSION"`처럼 [출력값](./run-outputs.md)으로 남기면 같은 응답의 `outputs`에서 확인할 수 있다.
 
 ---
 
@@ -261,5 +265,6 @@ run_job(
 
 - [Artifacts](./artifacts.md) — 업로드·환경변수·버전 고정의 동작 원리
 - [Getting Started](./getting-started.md) — 설치와 첫 Job
-- [Security](./security.md) — 정책 설계, 시크릿 마스킹, 감사 로그
+- [Run 파라미터](./run-params.md) · [Run 출력값](./run-outputs.md) — 실행마다 바뀌는 값 넘기기 · step이 알아낸 값 남기기
+- [Security](./security.md) — 정책 설계, `SECRET_*`/예약 환경변수, 감사 로그
 - [Troubleshooting](./troubleshooting.md) — 증상별 해결

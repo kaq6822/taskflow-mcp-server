@@ -26,6 +26,9 @@
 - **`timeout`(초):** Job 전체 timeout. 이를 초과하면 Run은 `TIMEOUT` 상태로 종료.
 - **`concurrency`:** 동시에 몇 개의 Run을 허용할지. 현재 프로토타입은 **항상 1** (동시에 한 Run만, 있을 시 실행 거부 + toast 에러).
 - **`onFailure`:** Job 레벨 실패 정책. 값: `STOP` / `CONTINUE` / `RETRY` / `ROLLBACK`.
+- **`params`:** 실행 시점에 받을 값의 선언(`name` · `default` · `pattern`). 규칙은 §10.2 Step 3과 [Run 파라미터](./run-params.md).
+
+> **구현 현황:** `schedule`은 저장·표시만 되며 cron으로 발화하는 스케줄러는 없습니다. Job 전체 `timeout`도 강제되지 않으며 Step별 `timeout`만 적용됩니다. `ROLLBACK`은 `STOP`과 동일하게 동작합니다.
 
 ### 2.3 Step 규칙
 
@@ -66,7 +69,7 @@
 
 - Run 시작 시: 새 `id` = `max(기존 runs의 id) + 1`.
 - `order`는 Step의 `topoSort` 결과. Run은 `order[currentIdx]`를 순차 소비.
-- 각 Step의 실행 시간은 시뮬레이터에서 `stepTargetDur(step)`으로 결정 (2~6초, step id별 고정 매핑).
+- 각 Step은 실제 subprocess로 실행되며, 소요 시간은 실측값(`elapsed_sec`)으로 기록된다. (프로토타입의 `stepTargetDur` 시뮬레이션은 구현에 쓰이지 않는다.)
 
 ### 3.3 Run 실행 제약
 
@@ -85,6 +88,7 @@ PENDING → RUNNING → SUCCESS (exit 0)
 
 - `RUNNING` 진입 시 `$ <cmd>` 로그 1줄 + `cwd=<step.cwd|TASKFLOW_STEP_CWD> · timeout=Xs · shell=False` 메타 로그 자동 기록.
 - 출력 assertion이 있으면 `output assertions · success_contains=N · failure_contains=N` 메타 로그 자동 기록.
+- 아티팩트·파라미터가 있으면 `artifacts · uploads://…` · `params · PARAM_X=…` 메타 로그, step이 남긴 출력값은 종료 시 `outputs · key=value` 로그로 기록.
 - 완료 시 `✓ done (X.Xs · exit 0)` 로그.
 
 ## 4. 트리거 규칙
@@ -98,6 +102,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 ```
 { who: actor, kind: 'job.run', target: `${jobId} #${runId}`, src: trigger === 'mcp' ? 'mcp' : 'web', r: 'OK' }
 ```
+
+> **구현 현황:** MCP `run_job`으로 생성된 Run은 kind `mcp.run`으로 기록됩니다. `schedule` 트리거를 발화하는 스케줄러는 없습니다(§2.2).
 
 ## 5. Artifact 규칙
 
@@ -144,9 +150,13 @@ PENDING → RUNNING → SUCCESS (exit 0)
 3. 악성 패턴 스캔 (ClamAV)
 4. 실행 권한 제거 · 읽기 전용 mount
 
+> **구현 현황:** 업로드 시 SHA-256을 계산해 기록하고 파일을 0444(읽기 전용)로 잠그는 것까지만 구현되어 있습니다. MIME 검사·서명 검증·ClamAV 스캔은 없으며(stub) 업로드 즉시 `READY`가 됩니다.
+
 ### 5.5 Retention
 
 - 보관 정책: **90일** + 마지막 배포에서 참조되는 버전은 유지(Garbage collection 예외).
+
+> **구현 현황:** 보관 정책·자동 정리는 미구현입니다. 아티팩트 삭제 API도 없습니다.
 
 ## 6. Audit 규칙
 
@@ -173,6 +183,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 | `secret.read` | 시크릿 접근 | 환경변수 resolve 시 |
 | `policy.violation` | 정책 위반 시도 | `shell=True` 시도 등 |
 
+> **구현 현황:** 현재 기록되는 kind는 `job.create` · `job.edit` · `job.delete` · `job.run` · `job.run.done` · `job.run.fail` · `job.run.cancel` · `mcp.run` · `mcp.key.issue` · `mcp.key.revoke` · `mcp.rate_limit` · `artifact.upload` · `auth.fail` · `policy.violation`입니다. `job.triggered`·`secret.read`는 발생하지 않습니다. 30일 보관·SIEM forward는 미구현이며, 내보내기는 CSV(`GET /api/audit/export.csv`)만 제공합니다.
+
 ### 6.3 Result Code
 
 - `OK`: 성공적으로 완료.
@@ -194,6 +206,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 | `ACTIVE` | 정상 사용 가능 | → `EXPIRING` → `REVOKED` |
 | `EXPIRING` | 만료 7일 이내 (자동 분류) | → `ACTIVE`(회전) / `REVOKED` |
 | `REVOKED` | 무효화됨. 영구 불가 | (종단) |
+
+> **구현 현황:** `EXPIRING` 자동 분류와 회전은 미구현입니다. 만료일이 지난 Key는 상태와 무관하게 인증 단계에서 거부됩니다.
 
 ### 7.2 Key 발급 규칙
 
@@ -236,6 +250,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 - 환경변수 KEY/VALUE 중 `source=secret`으로 표시된 값은 로그에 `*****`로 마스킹.
 - 시크릿 읽기는 `secret.read` audit 이벤트로 기록.
 
+> **구현 현황:** 값 마스킹과 `secret.read`는 미구현입니다. `SECRET_` 접두 환경변수는 실행 로그에 이름만 표시되고, Step `env` 값은 Job 정의에 평문으로 저장됩니다. Run 파라미터(`PARAM_*`)와 출력값은 로그·Run 기록에 그대로 남으므로 비밀값을 담지 않습니다. 자세한 내용은 [Security §3–4](./security.md).
+
 ## 9. 오류 진단 규칙 (Heuristic)
 
 로그 뷰어에서 FAILED/TIMEOUT Run이 선택되면 **오류 진단 카드**가 자동 노출:
@@ -254,6 +270,8 @@ PENDING → RUNNING → SUCCESS (exit 0)
 - `from failed 재실행`: 실패 지점부터만 재실행 (이전 SUCCESS step skip).
 - `전체 재실행`: 처음부터.
 - `✎ Step 편집`: 해당 Step을 Builder에서 열기.
+
+> **구현 현황:** `from failed 재실행`은 미구현이며, 재실행은 항상 처음부터입니다. 파라미터를 선언한 Job은 보고 있던 Run의 파라미터 값으로 입력 창을 엽니다.
 
 ## 10. AI Agent End-to-End 플로우 (MCP)
 
@@ -303,6 +321,8 @@ Developer                AI Agent              TaskFlow MCP             Worker
 - 호출: `upload_artifact(name, version, file, [ext], [metadata])`.
 - 성공 시 응답: `{ artifact_id, name, version, sha256, status }`
   - `status === 'SCANNING'`이면 아직 소비 불가 — Agent는 `get_artifact(artifact_id)` polling 또는 `run_job`에 전달 시 서버가 READY 대기 후 실행.
+
+> **구현 현황:** 실제 시그니처는 `upload_artifact(name, version, content_base64, ext?)`이며 `metadata`는 없습니다. 응답에 `size_bytes`가 추가됩니다. 조회는 `get_artifact(name, version)`(`version`에 `latest` 가능)입니다. 스캔이 stub이라 업로드 즉시 `READY`이고, `READY`가 아닌 아티팩트를 `run_job`에 넘기면 대기하지 않고 `NOT_READY`로 거부합니다.
 - 업로드는 다음 검증을 통과해야 `READY`:
   1. MIME/확장자 일치
   2. SHA-256 서명 검증
@@ -321,6 +341,8 @@ Developer                AI Agent              TaskFlow MCP             Worker
 - 동시성 검사: 해당 Job에 `liveRun`이 있으면 거부(429 또는 409) + 기존 run_id 반환.
 - Run 생성 시 audit `mcp.run` · `who=<key.label>` · `target=<job_id> #<run_id>`.
 
+> **구현 현황:** 실제 시그니처는 `run_job(job_id, mode?, artifact_refs?, params?, idempotency_key?)`이며 `actor`는 받지 않습니다(Key label이 actor). `mode`는 `sync`/`async`만 지원합니다. 동시성 차단은 tool 오류 `CONFLICT: job <id> already running as #<run_id>`로 반환됩니다(HTTP 상태 아님).
+
 #### Step 4: 결과 대기
 
 Agent는 선택한 실행 모드에 따라 결과를 수신(§10.3).
@@ -338,6 +360,8 @@ Agent는 선택한 실행 모드에 따라 결과를 수신(§10.3).
 | `async` | `run_id`만 즉시 반환 후 종료 | 긴 Job (ETL, 대용량 배포). Agent는 이후 polling/webhook으로 완료 확인 |
 | `stream` | 연결 유지 후 step 단위 이벤트 푸시 (WebSocket/SSE) | Agent가 진행률을 실시간 보고해야 할 때 |
 
+> **구현 현황:** `stream` 모드는 미구현입니다. `sync` 대기 상한은 `TASKFLOW_MCP_MAX_SYNC_SEC`(기본 600s)만 적용되며 `job.timeout`은 반영되지 않습니다. `subscribe_run`은 WebSocket이 아니라 MCP 서버 프로세스의 최근 이벤트 스냅샷을 돌려주는 일반 tool입니다. polling·webhook 중 webhook은 미구현입니다.
+
 #### sync 모드 제약
 
 - 서버 응답 타임아웃은 `min(job.timeout + buffer, MCP_MAX_SYNC)` — 기본 `MCP_MAX_SYNC = 600s`.
@@ -352,12 +376,14 @@ Agent는 선택한 실행 모드에 따라 결과를 수신(§10.3).
 #### stream 모드 이벤트 스키마
 
 ```
-event: run.started   data: { run_id, job_id, at }
+event: run.started   data: { run_id, job_id, at, artifacts, params }
 event: step.started  data: { step_id, cmd, timeout }
 event: step.log      data: { step_id, ts, lvl, text }
-event: step.finished data: { step_id, state, elapsed }
-event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
+event: step.finished data: { step_id, state, elapsed_sec }
+event: run.finished  data: { run_id, status, failed_step?, err_message?, duration_sec }
 ```
+
+(같은 이벤트가 REST SSE `GET /api/runs/{id}/stream`으로 제공된다 — [REST API](./rest-api.md#sse-이벤트-포맷).)
 
 ### 10.4 Agent용 표준 응답 스키마
 
@@ -374,6 +400,8 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
   "artifact_refs": {
     "dist": { "ref": "uploads://web-dist@v1.24.3", "sha256": "a9f3…" }
   },
+  "params": { "branch": "release/1.24" },
+  "outputs": {},
   "steps": [
     { "id": "pull",       "state": "SUCCESS", "elapsed_sec": 2.1 },
     { "id": "fetch-deps", "state": "SUCCESS", "elapsed_sec": 3.8 },
@@ -388,6 +416,9 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
 
 - Agent는 `status` 단일 필드로 1차 분기하고, `FAILED/TIMEOUT`일 때 `failed_step` + `err_message`를 사용자에게 전달.
 - `logs_uri`는 MCP의 `get_run_logs(run_id, step_id)` 툴로 바로 호환.
+- `params`는 Run에 고정된 파라미터 값(기본값 포함), `outputs`는 SUCCESS로 끝난 step이 `::output key=value`로 남긴 값([Run 출력값](./run-outputs.md)).
+
+> **구현 현황:** `audit_event_ids`는 응답에 포함되지 않습니다.
 
 ### 10.5 Foreground vs Background (클라이언트 관점)
 
@@ -398,7 +429,7 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
 
 서버는 모드 결정에 개입하지 않는다 — **Agent가 개발자 의도에 따라 선택**.
 
-단, 서버는 `job.expected_duration_sec`(Job 정의에 선택적)을 응답에 포함시켜 Agent가 모드를 자동 결정할 수 있도록 힌트를 준다.
+단, 서버는 `job.expected_duration_sec`(Job 정의에 선택적)을 응답에 포함시켜 Agent가 모드를 자동 결정할 수 있도록 힌트를 준다. (구현 현황: `expected_duration_sec`은 미구현.)
 
 ### 10.6 실패/예외 규칙
 
@@ -414,7 +445,11 @@ event: run.finished  data: { status, failed_step?, err_message?, duration_sec }
 
 **중요:** Job 자체의 실패는 HTTP 에러가 아니라 **응답 body의 `status` 필드**로 전달한다. HTTP 에러는 **프로토콜 레벨 실패**에만 사용.
 
+> **구현 현황:** MCP 경로에서 HTTP 상태로 오는 것은 `401 UNAUTH`와 `429 RATE_LIMIT`뿐이고, scope 미매칭(`DENY`)·동시성 차단(`CONFLICT`)·아티팩트/파라미터 해석 실패는 JSON-RPC 응답 안의 tool 오류(`<CODE>: <설명>`)로 돌아옵니다. `SCANNING`(202) 대기 경로는 없고 `READY`가 아닌 아티팩트는 `NOT_READY`로 거부됩니다. 파라미터 오류는 `UNKNOWN_PARAM`·`INVALID_PARAM`. 전체 목록은 [MCP API §4.1](./mcp-api.md#41-오류-응답).
+
 ### 10.7 Idempotency
 
 - Agent가 같은 배포를 중복 트리거하지 않도록 `run_job` 호출에 선택적 `idempotency_key`를 지원.
 - 동일 `idempotency_key`로 24시간 내 재호출 시 **새 Run을 만들지 않고** 기존 `run_id`를 반환.
+
+> **구현 현황:** 키에 만료가 없어 24시간이 지나도 같은 Run을 반환합니다. 키는 테이블 전체에서 유일하므로 다른 Job에서 같은 키를 쓰면 `CONFLICT`로 거부됩니다.

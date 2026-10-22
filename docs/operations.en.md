@@ -30,6 +30,8 @@ make start        # backend serves SPA+API (:8000), mcp (:7391) separate
 
 Access at `http://localhost:8000` (no Vite needed; same-origin so no CORS issues). Stop with `Ctrl+C`.
 
+`make start` / `make start-bg` build automatically **only when `frontend/dist/index.html` is missing**. An existing `dist` is served as-is, so after moving to a version with frontend changes you must run `make build` yourself ([Upgrading](#upgrading)).
+
 ### C. Production (background, persists after logout)
 
 ```sh
@@ -53,6 +55,7 @@ Change ports/binding with `make start-bg API_PORT=80 MCP_PORT=7391`.
 | Production build | `make build` | generates `frontend/dist` |
 | Production run | `make start` | backend serves SPA+API, MCP separate |
 | Tests | `make test` | pytest |
+| DB migration | `make migrate` | `alembic upgrade head` — required after upgrading |
 | Reset DB | `make reset` | delete SQLite + storage, then migrate |
 | Full clean | `make clean` | venv / node_modules / DB |
 
@@ -68,24 +71,22 @@ make start-mcp     # production MCP
 
 ## Network Binding
 
-Default `make dev` binds Vite to `localhost` so it is only accessible from the **developer's local machine**. To access from a remote host (another device on the same LAN):
+Default `make dev` binds Vite to `localhost`. The **backend and MCP default to `0.0.0.0`**, though, so they are reachable from the network even under `make dev` — for loopback only, use `make dev API_HOST=127.0.0.1 MCP_HOST=127.0.0.1`. To use the UI from a remote host (another device on the same LAN):
 
 ```sh
 # 1) Run with LAN binding
 make dev-lan TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173
 
-# 2) Or fine-grained control with env vars
-TASKFLOW_FRONTEND_HOST=0.0.0.0 \
-TASKFLOW_API_HOST=0.0.0.0 \
-TASKFLOW_MCP_HOST=0.0.0.0 \
-TASKFLOW_API_HOST_PUBLIC=192.168.1.10 \
-TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173 \
-  make dev
+# 2) Or fine-grained control with Make variables
+make dev FRONTEND_HOST=0.0.0.0 API_HOST=0.0.0.0 MCP_HOST=0.0.0.0 \
+  TASKFLOW_CORS_ORIGINS=http://192.168.1.10:5173
 ```
 
-- `TASKFLOW_FRONTEND_HOST` — Vite binding interface
-- `TASKFLOW_API_HOST` / `TASKFLOW_MCP_HOST` — FastAPI / MCP binding interface
-- `TASKFLOW_API_HOST_PUBLIC` — Host used by browser/external clients to reach the API (for Vite proxy target configuration)
+The make targets take bindings as **Make variables** (`API_HOST`/`API_PORT`/`MCP_HOST`/`MCP_PORT`/`FRONTEND_HOST`/`FRONTEND_PORT`) and hand them to each process. `TASKFLOW_*_HOST` / `TASKFLOW_*_PORT` from `.env` or the shell are overwritten by those values and have no effect there.
+
+- `FRONTEND_HOST` — Vite binding interface (passed to Vite as `TASKFLOW_FRONTEND_HOST`)
+- `API_HOST` / `MCP_HOST` — FastAPI (uvicorn `--host`) / MCP (`TASKFLOW_MCP_HOST`) binding interface
+- `TASKFLOW_API_HOST_PUBLIC` — Vite proxy target host. `make dev-frontend` sets it to the `API_HOST` value
 - `TASKFLOW_CORS_ORIGINS` — **Comma-separated** origin whitelist. Must include the remote browser's origin when it calls `/api` directly. Vite-proxied calls are same-origin and are not affected. Use a single `*` in dev for allow-all.
 
 > ⚠️ There is currently no login gate in the UI. Exposing with `dev-lan` allows anyone to create/run jobs — and, since there is no restriction on what a step's `cmd` may run (see [Security](./security.en.md)), that means arbitrary commands on the server. Use only on trusted networks.
@@ -125,7 +126,27 @@ TASKFLOW_ENV=production \
 
 When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend port, and `/mcp` to the MCP port. HTTPS termination is recommended at the reverse proxy layer.
 
+The backend and the MCP server are separate processes, each embedding its own Run Engine. A run started with MCP `run_job` executes in the MCP server process, so stopping the MCP server also stops the runs in progress there. A run cut off by its process going down (backend restarts included) stays `RUNNING` in the DB; clean it up with `POST /api/runs/{id}/cancel` or the stop button in the UI.
+
+## Upgrading
+
+After updating the code to a new version, do the following in order:
+
+```sh
+git pull
+make setup-backend   # if dependencies changed
+make migrate         # update the DB schema (alembic upgrade head)
+make build           # if the frontend changed — start/start-bg do not rebuild an existing dist
+make stop && make start-bg   # or make start
+```
+
+- **`make migrate` is required.** The table auto-creation at server start only creates missing tables; it does not add columns to existing ones. For example, run params (`0003_run_params` — `jobs.params`, `runs.params`) and run outputs (`0004_run_outputs` — `runs.outputs`) fail with `no such column` without the migration.
+- Migrations live in `backend/alembic/versions/` and are applied to the DB that `TASKFLOW_DB_URL` points at. Back up `backend/taskflow.db` first.
+- `make dev` serves the sources through Vite, so it needs no `make build`.
+
 ## Environment Variable Reference
+
+`TASKFLOW_*_HOST` / `TASKFLOW_*_PORT` are what a manually launched process reads. The make targets overwrite them with Make variables, as described in [Network Binding](#network-binding).
 
 | Variable | Default | Description |
 |---|---|---|
@@ -133,8 +154,8 @@ When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend 
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | Artifact/log root |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Default subprocess cwd when a step does not set `cwd` |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding. **Defaults to every interface, and `/api/*` has no auth** — set `127.0.0.1` to keep it loopback-only |
-| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding. uvicorn does not read these; it uses the `--host`/`--port` make passes (`API_HOST`/`API_PORT`, default `0.0.0.0`/`8000`). `TASKFLOW_API_PORT` is used as the Vite proxy target port. **Defaults to every interface, and `/api/*` has no auth** — set `API_HOST=127.0.0.1` to keep it loopback-only |
+| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding (read by `python -m app.mcp_server`) |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | Max wait for `run_job(sync)` |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite binding |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | External API host (Vite proxy target) |

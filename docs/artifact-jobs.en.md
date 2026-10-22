@@ -2,7 +2,7 @@
 
 Where the [Artifacts guide](./artifacts.en.md) covers *how artifacts work*, this document answers **"so how do I write the Job?"** It collects skeletons and patterns you can copy and adapt.
 
-A step's `cmd` is execve'd as written (`shell=False`), and there is no restriction on which command it may be. Permission to create and edit Jobs is therefore permission to run arbitrary commands on the server — grant the Job-authoring scope only to principals you trust; see [Security](./security.en.md).
+A step's `cmd` is execve'd as written (`shell=False`), and there is no restriction on which command it may be. Permission to create and edit Jobs is therefore permission to run arbitrary commands on the server. The Job-authoring REST API has no authentication and is not governed by MCP key scopes, so use network access control to narrow who can reach it to principals you trust; see [Security](./security.en.md).
 
 ---
 
@@ -135,7 +135,7 @@ Set it on a step to override the Job default.
 | Value | Behavior |
 |---|---|
 | `STOP` | Mark later steps `SKIPPED` and finish the run FAILED (default) |
-| `CONTINUE` | Move to the next step without failing the run |
+| `CONTINUE` | The step stays `FAILED`, but the run is not failed and moves to the next step |
 | `RETRY` | Retry **once**. A successful retry clears the first attempt's failure record |
 | `ROLLBACK` | ⚠️ Currently behaves **identically to `STOP`** |
 
@@ -209,7 +209,7 @@ A missing path fails with `exit 126 cwd not found: …`. `cd`, `pushd` and `popd
 
 CI uploads the build output; the Agent runs the Job against an explicit version.
 
-**① CI: upload** (scope `write:uploads`)
+**① CI: upload** (REST — no authentication; uploading through MCP `upload_artifact` needs scope `write:uploads`)
 
 ```bash
 curl -fsS -X POST "$TASKFLOW/api/artifacts" \
@@ -238,15 +238,20 @@ With `idempotency_key`, calling again with the same key returns the existing run
 {
   "status": "SUCCESS",
   "artifact_refs": {"jar": {"ref": "uploads://myapp@a1b2c3d", "sha256": "…"}},
+  "params": {},
+  "outputs": {},
   "steps": [{"id": "deploy", "state": "SUCCESS", "elapsed_sec": 12.4}]
 }
 ```
+
+Pass values that change per run, such as the target environment, as [run params](./run-params.en.md) (`params`); record what the script found out (e.g. the version actually deployed) as an [output](./run-outputs.en.md) with `echo "::output version=$ARTIFACT_JAR_VERSION"`, and it shows up in the same response's `outputs`.
 
 ---
 
 ## 6. Pre-deploy review
 
 - [ ] Is the script referenced by absolute path, and writable only by trusted operators? (there is no command restriction — see [Security](./security.en.md))
+- [ ] Is the set of principals who can edit this Job narrowed to trusted ones?
 - [ ] Does the script start with `set -euo pipefail` so mid-script failures are not swallowed?
 - [ ] Is the artifact copied before being worked on?
 - [ ] Is the exit code enough, or is `success_contains` needed?
@@ -260,5 +265,6 @@ With `idempotency_key`, calling again with the same key returns the existing run
 
 - [Artifacts](./artifacts.en.md) — how upload, env vars and pinning work
 - [Getting Started](./getting-started.en.md) — installation and your first Job
-- [Security](./security.en.md) — `shell=False`, secret masking, audit log
+- [Run Params](./run-params.en.md) · [Run Outputs](./run-outputs.en.md) — passing per-run values · recording what a step found out
+- [Security](./security.en.md) — `shell=False`, `SECRET_*`/reserved env vars, audit log
 - [Troubleshooting](./troubleshooting.en.md) — symptom-based fixes
