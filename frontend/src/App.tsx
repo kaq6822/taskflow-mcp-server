@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 
+import { RunParamsModal } from './components/RunParamsModal';
 import { Sidebar } from './components/Sidebar';
 import { Toasts } from './components/Toasts';
 import { Topbar } from './components/Topbar';
@@ -51,6 +52,7 @@ export function App() {
           <Current />
         </div>
       </div>
+      <RunParamsModal />
       <Toasts />
     </div>
   );

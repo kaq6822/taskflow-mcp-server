@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { ApiError, ConsumesArtifact, Step, api } from '../api/client';
+import { ApiError, ConsumesArtifact, JobParam, Step, api } from '../api/client';
 import { DagView } from '../components/dag/WorkflowViz';
 import { useT } from '../i18n/useT';
 import { useStore } from '../store/store';
@@ -20,6 +20,7 @@ type Draft = {
   concurrency: number;
   on_failure: 'STOP' | 'CONTINUE' | 'RETRY' | 'ROLLBACK';
   consumes_artifacts: ConsumesArtifact[];
+  params: JobParam[];
   steps: Step[];
 };
 
@@ -34,6 +35,7 @@ const EMPTY: Draft = {
   concurrency: 1,
   on_failure: 'STOP',
   consumes_artifacts: [],
+  params: [],
   steps: [
     { id: 'greet', cmd: ['echo', 'hello from taskflow'], timeout: 10, on_failure: 'STOP', deps: [] },
   ],
@@ -63,6 +65,7 @@ export function Builder() {
           concurrency: existing.concurrency,
           on_failure: existing.on_failure as Draft['on_failure'],
           consumes_artifacts: existing.consumes_artifacts ?? [],
+          params: existing.params ?? [],
           steps: existing.steps,
         }
       : EMPTY
@@ -85,6 +88,7 @@ export function Builder() {
         concurrency: existing.concurrency,
         on_failure: existing.on_failure as Draft['on_failure'],
         consumes_artifacts: existing.consumes_artifacts ?? [],
+        params: existing.params ?? [],
         steps: existing.steps,
       });
     } else {
@@ -208,6 +212,15 @@ function validateDraft(
     // rejects with a separate `".." in value` check.
     if (!/^[A-Za-z0-9._-]+$/.test(c.name) || c.name.includes('..'))
       errs.push(t.err_artifact_name_format(c.name));
+  }
+
+  // Mirrors backend/app/services/params.py validate_params. Patterns are
+  // Python regexes, so they are left to the backend rather than compiled here.
+  const paramNames = new Set<string>();
+  for (const p of d.params) {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(p.name)) errs.push(t.err_param_format(p.name));
+    else if (paramNames.has(p.name.toUpperCase())) errs.push(t.err_param_dup(p.name));
+    paramNames.add(p.name.toUpperCase());
   }
 
   const ids = new Set<string>();
@@ -617,6 +630,12 @@ function MetaEditor({
       ...draft,
       consumes_artifacts: consumes.map((c, j) => (j === i ? { ...c, ...patch } : c)),
     });
+  const params = draft.params;
+  const patchParam = (i: number, patch: Partial<JobParam>) =>
+    setDraft({
+      ...draft,
+      params: params.map((p, j) => (j === i ? { ...p, ...patch } : p)),
+    });
   return (
     <div>
       <div className="ctitle">{t.job_meta}</div>
@@ -765,6 +784,66 @@ function MetaEditor({
                 {consumes
                   .filter((c) => c.alias.trim())
                   .map((c) => `ARTIFACT_${c.alias.toUpperCase()}_PATH`)
+                  .join(' · ')}
+              </div>
+            )}
+          </div>
+        </div>
+        <div>
+          <FieldLabel help={t.help_job_params}>Run params (optional)</FieldLabel>
+          <div className="col" style={{ gap: 6 }}>
+            {params.map((p, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6 }}>
+                <input
+                  className="input mono sm"
+                  style={{ flex: '0 0 28%' }}
+                  placeholder={t.params_name_ph}
+                  value={p.name}
+                  onChange={(e) => patchParam(i, { name: e.target.value })}
+                />
+                <input
+                  className="input mono sm"
+                  style={{ flex: '0 0 28%' }}
+                  placeholder={t.params_default_ph}
+                  value={p.default ?? ''}
+                  // Empty default = required at trigger time.
+                  onChange={(e) => patchParam(i, { default: e.target.value || null })}
+                />
+                <input
+                  className="input mono sm"
+                  style={{ flex: 1 }}
+                  placeholder={t.params_pattern_ph}
+                  value={p.pattern ?? ''}
+                  onChange={(e) => patchParam(i, { pattern: e.target.value || null })}
+                />
+                <button
+                  className="btn sm danger"
+                  title={t.consumes_remove}
+                  onClick={() =>
+                    setDraft({ ...draft, params: params.filter((_, j) => j !== i) })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              className="btn sm"
+              style={{ alignSelf: 'flex-start' }}
+              onClick={() =>
+                setDraft({
+                  ...draft,
+                  params: [...params, { name: '', default: null, pattern: null }],
+                })
+              }
+            >
+              + {t.params_add}
+            </button>
+            {params.some((p) => p.name.trim()) && (
+              <div className="mono-s dim">
+                {params
+                  .filter((p) => p.name.trim())
+                  .map((p) => `PARAM_${p.name.toUpperCase()}`)
                   .join(' · ')}
               </div>
             )}

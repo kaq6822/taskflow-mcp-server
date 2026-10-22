@@ -4,6 +4,7 @@ import asyncio
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ from app.services.artifacts import (
     resolve_reference,
 )
 from app.services.audit import append_event
+from app.services.params import param_env, resolve_params
 
 
 def _ts() -> str:
@@ -146,11 +148,13 @@ class RunEngine:
         trigger: str,
         actor: str,
         artifact_refs: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> Run:
         lock = self._locks.setdefault(job.id, asyncio.Lock())
         if lock.locked():
             raise RuntimeError("job busy")
+        resolved_params = resolve_params(job.params or [], params or {})
         pinned = await self._pin_artifacts(session, job, artifact_refs or {})
         order = topo_sort(job.steps)
         run = Run(
@@ -160,6 +164,7 @@ class RunEngine:
             actor=actor,
             order=order,
             artifact_refs=pinned,
+            params=resolved_params,
             idempotency_key=idempotency_key,
         )
         session.add(run)
@@ -279,6 +284,8 @@ class RunEngine:
             trigger: str = run.trigger
             started_at = run.started_at
             pinned: dict[str, dict] = dict(run.artifact_refs or {})
+            run_params: dict[str, str] = dict(run.params or {})
+            param_vars = param_env(run_params)
             # Versions were already pinned at trigger time; this only turns them
             # into the env vars every step sees. A failure here means the row
             # disappeared between trigger and launch, which must not leave the
@@ -299,6 +306,7 @@ class RunEngine:
                     "job_id": job_id,
                     "at": started_at.isoformat(),
                     "artifacts": {a: m["ref"] for a, m in pinned.items()},
+                    "params": run_params,
                 },
             )
 
@@ -349,6 +357,7 @@ class RunEngine:
                 actor=actor,
                 trigger=trigger,
                 artifact_vars=artifact_vars,
+                param_vars=param_vars,
             )
             if result.state in ("FAILED", "TIMEOUT"):
                 failed_step = sid
@@ -373,6 +382,7 @@ class RunEngine:
                         actor=actor,
                         trigger=trigger,
                         artifact_vars=artifact_vars,
+                        param_vars=param_vars,
                     )
                     if retry.state in ("FAILED", "TIMEOUT"):
                         failed = True
@@ -540,6 +550,7 @@ class RunEngine:
         actor: str,
         trigger: str,
         artifact_vars: dict[str, str] | None = None,
+        param_vars: dict[str, str] | None = None,
     ) -> WorkerResult:
         cmd: list[str] = step_spec["cmd"]
         timeout: int = step_spec.get("timeout", 60)
@@ -597,6 +608,18 @@ class RunEngine:
                     "ts": _ts(),
                     "lvl": "dim",
                     "text": "artifacts · " + " · ".join(refs),
+                },
+            )
+        if param_vars:
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "dim",
+                    "text": "params · "
+                    + " · ".join(f"{k}={v}" for k, v in sorted(param_vars.items())),
                 },
             )
         if assertions.success_contains or assertions.failure_contains:
@@ -673,11 +696,12 @@ class RunEngine:
         # secret names still get masked in logs.
         base_env = dict(os.environ)
         base_env.update(step_spec.get("env", {}))
-        # ARTIFACT_* is applied last on purpose: these values are the pinned
-        # resolution recorded on the Run, and letting a step override them
-        # would let the log claim one version while another was deployed.
-        if artifact_vars:
-            clobbered = sorted(set(step_spec.get("env", {})) & set(artifact_vars))
+        # ARTIFACT_* and PARAM_* are applied last on purpose: these values are
+        # pinned on the Run, and letting a step override them would let the
+        # record claim one version or branch while another was deployed.
+        reserved = {**(param_vars or {}), **(artifact_vars or {})}
+        if reserved:
+            clobbered = sorted(set(step_spec.get("env", {})) & set(reserved))
             if clobbered:
                 log_bus.publish(
                     run_id,
@@ -689,7 +713,7 @@ class RunEngine:
                         "text": f"step env ignored for reserved keys: {', '.join(clobbered)}",
                     },
                 )
-            base_env.update(artifact_vars)
+            base_env.update(reserved)
         env, masked = filter_env(base_env)
         if masked:
             log_bus.publish(

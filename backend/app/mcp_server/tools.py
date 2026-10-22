@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+from typing import Any
 
 from mcp.server.fastmcp import Context, FastMCP
 from sqlalchemy import select
@@ -23,6 +24,7 @@ from app.services.artifacts import (
 )
 from app.services.audit import append_event
 from app.services.keys import scope_allows
+from app.services.params import ParamResolutionError
 
 
 class DeniedError(Exception):
@@ -65,6 +67,7 @@ def _job_to_dict(job: Job) -> dict:
         "concurrency": job.concurrency,
         "on_failure": job.on_failure,
         "consumes_artifacts": job.consumes_artifacts,
+        "params": job.params or [],
         "steps": job.steps,
     }
 
@@ -78,6 +81,7 @@ def _run_to_dict(run: Run, steps: list[RunStep]) -> dict:
         "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         "duration_sec": run.duration_sec,
         "artifact_refs": run.artifact_refs,
+        "params": run.params or {},
         "steps": [
             {"id": s.step_id, "state": s.state, "elapsed_sec": s.elapsed_sec}
             for s in steps
@@ -241,13 +245,21 @@ def register_tools(mcp: FastMCP) -> None:
         ctx: Context,
         mode: str = "sync",
         artifact_refs: dict[str, str] | None = None,
+        # Any, like the REST body: a non-string must answer INVALID_PARAM, not
+        # a tool-argument validation error.
+        params: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> dict:
         """Trigger a run of `job_id`. modes: sync | async.
 
         `artifact_refs` maps a Job's declared aliases to `uploads://<name>@<version>`.
         Omitted aliases resolve to `@latest`; the concrete versions are pinned
-        onto the run record. scope: run:<job_id> (or run:*)"""
+        onto the run record.
+
+        `params` maps the Job's declared param names (see get_job `params`) to
+        string values; steps read them as PARAM_<NAME>. Omitted params use their
+        default, and a param without a default must be given.
+        scope: run:<job_id> (or run:*)"""
         auth = await _require(ctx, f"run:{job_id}", target=job_id)
         engine = get_engine()
         async with SessionLocal() as s:
@@ -285,6 +297,7 @@ def register_tools(mcp: FastMCP) -> None:
                     trigger="mcp",
                     actor=auth.label,
                     artifact_refs=artifact_refs,
+                    params=params,
                     idempotency_key=idempotency_key,
                 )
             except IntegrityError:
@@ -307,7 +320,7 @@ def register_tools(mcp: FastMCP) -> None:
                         f"already used by another job"
                     )
                 return _run_to_dict(winner, winner.steps)
-            except ArtifactResolutionError as e:
+            except (ArtifactResolutionError, ParamResolutionError) as e:
                 await append_event(
                     s,
                     who=auth.label,

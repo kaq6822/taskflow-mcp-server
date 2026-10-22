@@ -16,6 +16,7 @@ from app.models import Job, Run
 from app.schemas import RunCreate, RunOut
 from app.services.artifacts import ArtifactResolutionError
 from app.services.audit import append_event
+from app.services.params import ParamResolutionError
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -42,12 +43,14 @@ def _replay_or_conflict(existing: Run, job_id: str, key: str | None) -> None:
 
 
 # docs/03-system-spec.md §123 error vocabulary → HTTP status.
-_ARTIFACT_ERROR_STATUS = {
+_RESOLUTION_ERROR_STATUS = {
     "NOT_FOUND": 404,
     "NOT_READY": 409,
     "INVALID_ARTIFACT": 400,
     "UNKNOWN_ALIAS": 400,
     "MISMATCH": 400,
+    "INVALID_PARAM": 400,
+    "UNKNOWN_PARAM": 400,
 }
 
 
@@ -155,9 +158,10 @@ async def start_run(
             trigger=body.trigger,
             actor=actor,
             artifact_refs=body.artifact_refs,
+            params=body.params,
             idempotency_key=body.idempotency_key,
         )
-    except ArtifactResolutionError as e:
+    except (ArtifactResolutionError, ParamResolutionError) as e:
         await append_event(
             session,
             who=actor,
@@ -168,7 +172,7 @@ async def start_run(
             result="DENY",
         )
         raise HTTPException(
-            _ARTIFACT_ERROR_STATUS.get(e.code, 400),
+            _RESOLUTION_ERROR_STATUS.get(e.code, 400),
             detail={"error": e.code, "message": e.message},
         )
     except IntegrityError:

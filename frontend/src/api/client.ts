@@ -18,6 +18,14 @@ export type ConsumesArtifact = {
   name: string;
 };
 
+/** A value supplied when a run is triggered. Steps read it as PARAM_<NAME>.
+ *  `default: null` makes it required; `pattern` must match the whole value. */
+export type JobParam = {
+  name: string;
+  default: string | null;
+  pattern: string | null;
+};
+
 export type Job = {
   id: string;
   name: string;
@@ -29,6 +37,7 @@ export type Job = {
   concurrency: number;
   on_failure: string;
   consumes_artifacts: ConsumesArtifact[];
+  params: JobParam[];
   steps: Step[];
   created_at: string;
   updated_at: string;
@@ -55,6 +64,8 @@ export type Run = {
   order: string[];
   /** Versions pinned when the run started, keyed by the Job's aliases. */
   artifact_refs: Record<string, { ref: string; sha256: string }>;
+  /** Every declared param with the value the run used (defaults filled in). */
+  params: Record<string, string>;
   failed_step: string | null;
   err_message: string | null;
   steps: RunStep[];
@@ -157,6 +168,8 @@ export const api = {
       actor?: string;
       /** {alias: 'uploads://<name>@<version>'} — omitted aliases use @latest. */
       artifact_refs?: Record<string, string>;
+      /** {name: value} — omitted params use the Job's default. */
+      params?: Record<string, string>;
     } = {}
   ) =>
     req<Run>(`/api/jobs/${jobId}/runs`, {

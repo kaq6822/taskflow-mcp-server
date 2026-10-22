@@ -32,6 +32,9 @@ class Job(Base):
     # [{"alias": "jar", "name": "myapp"}, …] — alias is the env-var fragment
     # each step sees as ARTIFACT_<ALIAS>_PATH.
     consumes_artifacts: Mapped[list[dict]] = mapped_column(JSON, default=list)
+    # [{"name": "branch", "default": "dev", "pattern": "…"}, …] — trigger-time
+    # values each step sees as PARAM_<NAME>. A null default makes it required.
+    params: Mapped[list[dict]] = mapped_column(JSON, default=list)
     steps: Mapped[list[dict]] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -57,6 +60,9 @@ class Run(Base):
     # Pinned at run start: `@latest` is resolved once and the concrete version
     # recorded, so an audit months later can still tell what was deployed.
     artifact_refs: Mapped[dict] = mapped_column(JSON, default=dict)
+    # {"branch": "feature/x", …} — every declared param with its resolved
+    # value (defaults filled in), so the record shows what the run actually used.
+    params: Mapped[dict] = mapped_column(JSON, default=dict)
     failed_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     err_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)

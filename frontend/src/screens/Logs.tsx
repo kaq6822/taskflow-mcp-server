@@ -16,6 +16,7 @@ export function Logs() {
   const setSelectedRunId = useStore((s) => s.setSelectedRunId);
   const setScreen = useStore((s) => s.setScreen);
   const startRun = useStore((s) => s.startRun);
+  const promptRun = useStore((s) => s.promptRun);
   const cancelRun = useStore((s) => s.cancelRun);
   const liveRun = useStore((s) => s.liveRun);
 
@@ -68,6 +69,9 @@ export function Logs() {
   };
   const curStep = job.steps.find((s) => s.id === selStep);
   const curState = selStep ? stepState(selStep) : 'pending';
+  // A re-run starts from this run's values, not the Job defaults.
+  const rerun = () =>
+    (job.params?.length ?? 0) > 0 ? promptRun(job.id, run.params) : startRun(job.id);
 
   return (
     <div>
@@ -90,6 +94,11 @@ export function Logs() {
           <span className="d" />
           {run.status}
         </span>
+        {Object.entries(run.params ?? {}).map(([k, v]) => (
+          <span key={k} className="chip mono" title={`PARAM_${k.toUpperCase()}`}>
+            {k}={v}
+          </span>
+        ))}
         <div className="spacer" />
         {run.status === 'RUNNING' ? (
           <button className="btn danger sm" onClick={() => cancelRun(run.id)}>
@@ -98,7 +107,7 @@ export function Logs() {
         ) : (
           <button
             className="btn primary sm"
-            onClick={() => startRun(job.id)}
+            onClick={rerun}
             disabled={!!liveRun}
           >
             {t.rerun}
@@ -255,7 +264,7 @@ export function Logs() {
               <div className="row" style={{ marginTop: 8, gap: 6 }}>
                 <button
                   className="btn sm primary"
-                  onClick={() => startRun(job.id)}
+                  onClick={rerun}
                   disabled={!!liveRun}
                 >
                   {t.rerun}
