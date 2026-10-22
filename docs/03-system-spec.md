@@ -99,6 +99,7 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
     "dist": { "ref": "uploads://web-dist@v1.24.3", "sha256": "a9f3…" }
   },
   "params": { "branch": "release/1.24" },
+  "outputs": { "commit": "9535057…" },
   "steps": [
     { "id": "pull", "state": "SUCCESS", "elapsed_sec": 2.1 }
   ],

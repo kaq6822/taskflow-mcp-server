@@ -65,6 +65,7 @@ Run을 시작하면 Monitor 화면에서 SSE로 stdout이 실시간 스트림됩
 | [Artifacts](./docs/artifacts.md) | 업로드 · Job에서 alias 선언 · step에서 `ARTIFACT_*` 사용 · 버전 고정 |
 | [Artifact Jobs](./docs/artifact-jobs.md) | 아티팩트를 쓰는 Job 작성법 · 판정/실패 처리 · 안티패턴 |
 | [Run Params](./docs/run-params.md) | 실행 시 값 전달(브랜치 등) · Job에서 선언 · step에서 `PARAM_*` 사용 |
+| [Run Outputs](./docs/run-outputs.md) | step이 `::output key=value`로 Run에 값 기록(배포 커밋 등) · 마지막 성공 Run 값 조회 |
 | [MCP API](./docs/mcp-api.md) | Key 발급 · JSON-RPC 호출 · 도구 목록 · Claude Desktop 연동 |
 | [REST API](./docs/rest-api.md) | 엔드포인트 · SSE 이벤트 포맷 · 오류 코드 |
 | [Operations](./docs/operations.md) | 실행 모드(A/B/C) · 네트워크 바인딩 · 프로덕션 릴리즈 · 환경변수 |

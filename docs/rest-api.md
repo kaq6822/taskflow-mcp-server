@@ -14,7 +14,7 @@ Backend REST API는 `http://localhost:8000`에서 서빙됩니다. Frontend(Vite
 | `DELETE /api/jobs/{id}` | Job 삭제 |
 | `POST /api/jobs/{id}/runs` | Run 트리거 (body: `{trigger, actor, artifact_refs?, params?, idempotency_key?}`) — `artifact_refs`는 `{alias: "uploads://<name>@<ver\|latest>"}`, 생략한 alias는 `@latest`. `params`는 `{name: value}`, 생략한 파라미터는 기본값 ([Run 파라미터](./run-params.md)) |
 | `GET /api/runs?job_id=&status=&limit=` | Run 이력 |
-| `GET /api/runs/{id}` | Run 단건 (`steps[]` 포함) |
+| `GET /api/runs/{id}` | Run 단건 (`steps[]`·`params`·`outputs` 포함 — [Run 출력값](./run-outputs.md)) |
 | `GET /api/runs/{id}/logs/{step_id}?tail=200` | Step stdout/stderr 로그 tail |
 | `POST /api/runs/{id}/cancel` | Run 취소 |
 | `POST /api/jobs/{id}/runs/cancel` | 해당 Job의 실행 중 Run 취소 |

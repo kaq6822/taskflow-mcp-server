@@ -14,7 +14,7 @@ The Backend REST API is served at `http://localhost:8000`. The Frontend (Vite de
 | `DELETE /api/jobs/{id}` | Delete job |
 | `POST /api/jobs/{id}/runs` | Trigger a run (body: `{trigger, actor, artifact_refs?, params?, idempotency_key?}`) — `artifact_refs` is `{alias: "uploads://<name>@<ver\|latest>"}`; omitted aliases use `@latest`. `params` is `{name: value}`; omitted params use their default ([Run parameters](./run-params.en.md)) |
 | `GET /api/runs?job_id=&status=&limit=` | Run history |
-| `GET /api/runs/{id}` | Single run (includes `steps[]`) |
+| `GET /api/runs/{id}` | Single run (includes `steps[]`, `params`, `outputs` — [Run outputs](./run-outputs.en.md)) |
 | `GET /api/runs/{id}/logs/{step_id}?tail=200` | Step stdout/stderr log tail |
 | `POST /api/runs/{id}/cancel` | Cancel run |
 | `POST /api/jobs/{id}/runs/cancel` | Cancel the currently running run for a job |
