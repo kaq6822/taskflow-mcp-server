@@ -66,6 +66,8 @@ export type Run = {
   artifact_refs: Record<string, { ref: string; sha256: string }>;
   /** Every declared param with the value the run used (defaults filled in). */
   params: Record<string, string>;
+  /** Values steps published with `::output key=value` (e.g. the deployed commit). */
+  outputs: Record<string, string>;
   failed_step: string | null;
   err_message: string | null;
   steps: RunStep[];

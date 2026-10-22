@@ -301,6 +301,7 @@ function RunsTab({
           <th>{t.col_duration}</th>
           <th>{t.col_status}</th>
           <th>Fail step</th>
+          <th>Outputs</th>
           <th />
         </tr>
       </thead>
@@ -334,6 +335,11 @@ function RunsTab({
             </td>
             <td className="mono-s">
               {r.failed_step ? <span style={{ color: 'var(--err)' }}>{r.failed_step}</span> : '—'}
+            </td>
+            <td className="mono-s dim">
+              {Object.entries(r.outputs ?? {})
+                .map(([k, v]) => `${k}=${v}`)
+                .join(' · ') || '—'}
             </td>
             <td className="mono-s dim">
               {r.status === 'RUNNING' ? (

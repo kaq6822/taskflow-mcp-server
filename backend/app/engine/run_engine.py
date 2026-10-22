@@ -28,6 +28,7 @@ from app.services.artifacts import (
     resolve_reference,
 )
 from app.services.audit import append_event
+from app.services.outputs import OutputLineError, parse_output_line
 from app.services.params import param_env, resolve_params
 
 
@@ -685,11 +686,42 @@ class RunEngine:
                 state="FAILED", elapsed=0.0, exit_code=-1, err_message=str(e)
             )
 
+        step_outputs: dict[str, str] = {}
+
         def on_line(stream: str, text: str) -> None:
             lvl = "err" if stream == "stderr" else "info"
             log_bus.publish(
                 run_id, "step.log", {"step_id": sid, "ts": _ts(), "lvl": lvl, "text": text}
             )
+            # stdout only: stderr is where tools dump diagnostics that may echo
+            # arbitrary input, and an output must be something the step chose
+            # to publish.
+            if stream != "stdout":
+                return
+            try:
+                parsed = parse_output_line(text)
+            except OutputLineError as e:
+                log_bus.publish(
+                    run_id,
+                    "step.log",
+                    {"step_id": sid, "ts": _ts(), "lvl": "warn", "text": f"output ignored: {e}"},
+                )
+                return
+            if parsed is not None:
+                key, value = parsed
+                prev = step_outputs.get(key)
+                if prev is not None and prev != value:
+                    log_bus.publish(
+                        run_id,
+                        "step.log",
+                        {
+                            "step_id": sid,
+                            "ts": _ts(),
+                            "lvl": "warn",
+                            "text": f"output {key} overwritten: {prev} → {value}",
+                        },
+                    )
+                step_outputs[key] = value
 
         # P2-6: merge step-level env onto the worker process env so jobs can
         # configure per-step variables. Pass through the SECRET_* filter so
@@ -755,7 +787,53 @@ class RunEngine:
             rs.exit_code = result.exit_code
             rs.finished_at = utcnow()
             rs.logs_path = str(log_path)
+            # Only a successful step's outputs count. Under CONTINUE or RETRY a
+            # failed attempt does not fail the run, so keeping its values would
+            # let a SUCCESS run claim e.g. a commit that never got deployed.
+            recorded = step_outputs if result.state == "SUCCESS" else {}
+            overwritten: list[str] = []
+            if recorded:
+                run = await s.get(Run, run_id)
+                if run is not None:
+                    before = run.outputs or {}
+                    overwritten = [
+                        f"{k}: {before[k]} → {v}"
+                        for k, v in recorded.items()
+                        if k in before and before[k] != v
+                    ]
+                    # Reassign rather than mutate: a JSON column does not
+                    # track in-place changes.
+                    run.outputs = {**before, **recorded}
             await s.commit()
+        if step_outputs and not recorded:
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "warn",
+                    "text": f"outputs discarded: step ended {result.state}",
+                },
+            )
+        for line in overwritten:
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {"step_id": sid, "ts": _ts(), "lvl": "warn", "text": f"output overwritten by this step · {line}"},
+            )
+        if recorded:
+            log_bus.publish(
+                run_id,
+                "step.log",
+                {
+                    "step_id": sid,
+                    "ts": _ts(),
+                    "lvl": "dim",
+                    "text": "outputs · "
+                    + " · ".join(f"{k}={v}" for k, v in sorted(recorded.items())),
+                },
+            )
         if result.state == "SUCCESS":
             log_bus.publish(
                 run_id,

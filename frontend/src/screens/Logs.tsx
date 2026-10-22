@@ -99,6 +99,11 @@ export function Logs() {
             {k}={v}
           </span>
         ))}
+        {Object.entries(run.outputs ?? {}).map(([k, v]) => (
+          <span key={`out-${k}`} className="chip ok mono" title={t.run_output_hint}>
+            → {k}={v}
+          </span>
+        ))}
         <div className="spacer" />
         {run.status === 'RUNNING' ? (
           <button className="btn danger sm" onClick={() => cancelRun(run.id)}>

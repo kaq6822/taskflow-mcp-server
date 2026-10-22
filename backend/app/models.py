@@ -63,6 +63,9 @@ class Run(Base):
     # {"branch": "feature/x", …} — every declared param with its resolved
     # value (defaults filled in), so the record shows what the run actually used.
     params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # {"commit": "9535057…", …} — values steps published with `::output k=v`
+    # (see services/outputs.py), e.g. which commit a deploy actually shipped.
+    outputs: Mapped[dict] = mapped_column(JSON, default=dict)
     failed_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     err_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)

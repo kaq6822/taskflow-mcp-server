@@ -63,6 +63,7 @@ Once a run starts, Monitor streams stdout in real time over SSE:
 | [Artifacts](./docs/artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
 | [Artifact Jobs](./docs/artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
 | [Run Params](./docs/run-params.en.md) | Passing values at trigger time (e.g. a branch) · declaring on a Job · `PARAM_*` in steps |
+| [Run Outputs](./docs/run-outputs.en.md) | Steps record values on the run with `::output key=value` (e.g. the deployed commit) · reading the last successful run |
 | [MCP API](./docs/mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [REST API](./docs/rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [Operations](./docs/operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |

@@ -82,6 +82,7 @@ def _run_to_dict(run: Run, steps: list[RunStep]) -> dict:
         "duration_sec": run.duration_sec,
         "artifact_refs": run.artifact_refs,
         "params": run.params or {},
+        "outputs": run.outputs or {},
         "steps": [
             {"id": s.step_id, "state": s.state, "elapsed_sec": s.elapsed_sec}
             for s in steps

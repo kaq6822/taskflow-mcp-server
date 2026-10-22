@@ -115,6 +115,7 @@ class RunOut(BaseModel):
     order: list[str]
     artifact_refs: dict[str, Any] = Field(default_factory=dict)
     params: dict[str, str] = Field(default_factory=dict)
+    outputs: dict[str, str] = Field(default_factory=dict)
     failed_step: str | None
     err_message: str | None
     steps: list[RunStepOut] = Field(default_factory=list)
