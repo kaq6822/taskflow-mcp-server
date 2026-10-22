@@ -17,9 +17,11 @@ echo "::output branch=$PARAM_BRANCH"
 |---|---|
 | 위치 | **stdout**, 줄 맨 앞이 `::output ` 로 시작. stderr의 같은 줄은 무시한다 |
 | key | `^[A-Za-z][A-Za-z0-9_]*$` |
-| value | `=` 뒤 나머지 전부(뒤의 `\r` 제외). 빈 값·제어문자·1024자 초과는 무시하고 로그에 `output ignored` 경고를 남긴다 |
-| 덮어쓰기 | 같은 key를 다시 찍으면(같은 step·재시도·뒤 step) 나중 값이 남는다 |
-| 실패한 step | 실패해도 기록은 남는다 — **신뢰 여부는 Run의 `status`로 판단한다** |
+| value | `=` 뒤 나머지 전부(뒤의 `\r` 제외). 빈 값·앞뒤 공백·제어문자(C0/C1·U+2028/2029)·깨진 문자(U+FFFD)·1024자 초과는 무시하고 로그에 `output ignored` 경고를 남긴다 |
+| 덮어쓰기 | 같은 key를 다시 찍으면(같은 step·뒤 step) 나중 값이 남고, 값이 바뀌면 로그에 `overwritten` 경고를 남긴다 |
+| 실패한 step | **SUCCESS로 끝난 step의 값만 기록한다.** 실패·타임아웃·취소된 step의 값은 버리고 `outputs discarded` 경고를 남긴다 — `CONTINUE`·`RETRY`로 Run이 성공해도 실패한 시도의 값이 섞이지 않는다 |
+
+출력값은 step의 마지막 부분에서 찍는 것이 안전하다. 그 뒤에 임의 내용(커밋 메시지, 파일 내용 등)을 stdout으로 흘리면 그 안의 `::output` 줄이 값을 덮어쓸 수 있다.
 
 step 로그에는 원래 줄과 함께 끝에 `outputs · commit=…` 요약이 찍힌다.
 

@@ -30,7 +30,18 @@ def test_parse_output_line(line, expected):
 
 @pytest.mark.parametrize(
     "line",
-    ["::output commit", "::output =abc", "::output 1st=x", "::output commit=", "::output k=a\x1bb"],
+    [
+        "::output commit",
+        "::output =abc",
+        "::output 1st=x",
+        "::output commit=",
+        "::output commit=   ",
+        "::output commit=abc ",
+        "::output k=a\x1bb",
+        "::output k=a\x85b",
+        "::output k=a b",
+        "::output k=a�b",
+    ],
 )
 def test_malformed_output_line_is_reported(line):
     with pytest.raises(OutputLineError):
@@ -44,13 +55,17 @@ def _job(steps: list[dict]) -> Job:
     return Job(id="deploy", name="deploy", owner="t", tags=[], consumes_artifacts=[], params=[], steps=steps)
 
 
-async def _run_with_lines(session, monkeypatch, lines_by_step: dict, states: dict | None = None):
+async def _run_with_lines(
+    session, monkeypatch, lines_by_step: dict, states: dict | None = None, on_failure: str = "STOP"
+):
     """Drive the real run loop; each step "prints" the given (stream, line) pairs."""
     states = states or {}
     steps = []
     prev = None
     for sid in lines_by_step:
-        steps.append({"id": sid, "cmd": ["echo", sid], "timeout": 5, "deps": [prev] if prev else []})
+        steps.append(
+            {"id": sid, "cmd": ["echo", sid], "timeout": 5, "deps": [prev] if prev else [], "on_failure": on_failure}
+        )
         prev = sid
     job = _job(steps)
     session.add(job)
@@ -97,13 +112,43 @@ async def test_stderr_and_malformed_lines_are_not_recorded(session, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_outputs_of_a_failed_step_are_kept_with_the_failed_status(session, monkeypatch):
-    """Readers pick runs by status; the record still shows what was attempted."""
+async def test_failed_step_outputs_never_reach_a_successful_run(session, monkeypatch):
+    """Under CONTINUE the run still ends SUCCESS. If the failed deploy step's
+    commit were kept, a later reader would take a never-deployed commit as the
+    last deployed one."""
     run = await _run_with_lines(
-        session, monkeypatch, {"s1": [("stdout", "::output commit=ccc")]}, states={"s1": "FAILED"}
+        session,
+        monkeypatch,
+        {
+            "source": [("stdout", "::output commit=aaa")],
+            "deploy": [("stdout", "::output commit=bbb")],
+        },
+        states={"deploy": "FAILED"},
+        on_failure="CONTINUE",
     )
-    assert run.status == "FAILED"
-    assert run.outputs == {"commit": "ccc"}
+    assert run.status == "SUCCESS"
+    assert run.outputs == {"commit": "aaa"}
+
+
+@pytest.mark.asyncio
+async def test_real_worker_delivers_outputs_before_the_step_is_finalized(session, monkeypatch):
+    """No fake worker: lines travel reader thread → call_soon_threadsafe →
+    on_line, and must all land before the finalize transaction reads them."""
+    import sys
+
+    script = "for i in range(500): print('noise', i)\nprint('::output commit=' + 'f' * 40)"
+    job = _job([{"id": "s1", "cmd": [sys.executable, "-c", script], "timeout": 30, "deps": []}])
+    session.add(job)
+    await session.flush()
+    engine = RunEngine()
+    run = await engine.start(session, job=job, trigger="manual", actor="t")
+    await session.commit()
+
+    await engine._run_loop_body(job.id, run.id)
+    await session.refresh(run)
+
+    assert run.status == "SUCCESS"
+    assert run.outputs == {"commit": "f" * 40}
 
 
 # ---- API -------------------------------------------------------------------

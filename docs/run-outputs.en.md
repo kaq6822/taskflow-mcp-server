@@ -17,9 +17,11 @@ echo "::output branch=$PARAM_BRANCH"
 |---|---|
 | Where | **stdout**, the line must start with `::output `. The same line on stderr is ignored |
 | key | `^[A-Za-z][A-Za-z0-9_]*$` |
-| value | Everything after the first `=` (a trailing `\r` is dropped). Empty values, control characters and values over 1024 chars are ignored with an `output ignored` warning in the log |
-| Overwrites | Printing the same key again (same step, a retry, or a later step) keeps the last value |
-| Failed steps | Outputs are kept even if the step fails — **decide whether to trust them by the run's `status`** |
+| value | Everything after the first `=` (a trailing `\r` is dropped). Empty values, leading/trailing whitespace, control characters (C0/C1, U+2028/2029), replacement characters (U+FFFD) and values over 1024 chars are ignored with an `output ignored` warning in the log |
+| Overwrites | Printing the same key again (same step or a later step) keeps the last value, with an `overwritten` warning when it changes |
+| Failed steps | **Only a step that ends SUCCESS gets its outputs recorded.** Values from failed, timed-out or cancelled steps are discarded with an `outputs discarded` warning — so a run that succeeds through `CONTINUE` or `RETRY` never carries a failed attempt's values |
+
+Print outputs near the end of a step. Arbitrary content streamed to stdout afterwards (commit messages, file contents) could contain an `::output` line that overwrites the value.
 
 The step log keeps the original line and ends with an `outputs · commit=…` summary.
 
