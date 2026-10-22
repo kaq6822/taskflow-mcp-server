@@ -30,6 +30,18 @@ class ConsumesArtifact(BaseModel):
     name: str
 
 
+class JobParam(BaseModel):
+    """One value a caller may supply when triggering a run.
+
+    Steps receive it as `PARAM_<NAME>`. `default=None` makes the parameter
+    required; `pattern` is matched against the whole value.
+    """
+
+    name: str
+    default: str | None = None
+    pattern: str | None = None
+
+
 class JobCreate(BaseModel):
     id: str
     name: str
@@ -41,6 +53,7 @@ class JobCreate(BaseModel):
     concurrency: int = 1
     on_failure: Literal["STOP", "CONTINUE", "RETRY", "ROLLBACK"] = "STOP"
     consumes_artifacts: list[ConsumesArtifact] = Field(default_factory=list)
+    params: list[JobParam] = Field(default_factory=list)
     steps: list[StepSpec]
 
 
@@ -54,6 +67,7 @@ class JobUpdate(BaseModel):
     concurrency: int | None = None
     on_failure: Literal["STOP", "CONTINUE", "RETRY", "ROLLBACK"] | None = None
     consumes_artifacts: list[ConsumesArtifact] | None = None
+    params: list[JobParam] | None = None
     steps: list[StepSpec] | None = None
 
 
@@ -70,6 +84,7 @@ class JobOut(BaseModel):
     concurrency: int
     on_failure: str
     consumes_artifacts: list[dict[str, Any]]
+    params: list[dict[str, Any]] = Field(default_factory=list)
     steps: list[dict[str, Any]]
     created_at: datetime
     updated_at: datetime
@@ -99,6 +114,7 @@ class RunOut(BaseModel):
     duration_sec: float
     order: list[str]
     artifact_refs: dict[str, Any] = Field(default_factory=dict)
+    params: dict[str, str] = Field(default_factory=dict)
     failed_step: str | None
     err_message: str | None
     steps: list[RunStepOut] = Field(default_factory=list)
@@ -110,6 +126,9 @@ class RunCreate(BaseModel):
     # {alias: "uploads://<name>@<version|latest>"} — partial maps are fine;
     # any alias the Job declares but the caller omits defaults to `@latest`.
     artifact_refs: dict[str, str] = Field(default_factory=dict)
+    # {name: value} for the Job's declared params; omitted ones use their
+    # default. Typed `Any` so a non-string answers INVALID_PARAM like the MCP
+    # path does, instead of a bare 422.
     params: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str | None = None
 

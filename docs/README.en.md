@@ -12,6 +12,7 @@ This folder contains two types of documents:
 | [getting-started.en.md](./getting-started.en.md) | Installation · First job · Step working directory (`cwd`) |
 | [artifacts.en.md](./artifacts.en.md) | Upload · Declaring aliases on a Job · `ARTIFACT_*` in steps · Version pinning |
 | [artifact-jobs.en.md](./artifact-jobs.en.md) | Authoring Jobs that use artifacts · verdicts/failure handling · anti-patterns |
+| [run-params.en.md](./run-params.en.md) | Passing values at trigger time (e.g. a branch) · declaring on a Job · `PARAM_*` in steps |
 | [mcp-api.en.md](./mcp-api.en.md) | Issue key · JSON-RPC calls · Tool list · Claude Desktop |
 | [rest-api.en.md](./rest-api.en.md) | Endpoints · SSE event format · Error codes |
 | [operations.en.md](./operations.en.md) | Run modes (A/B/C) · Network binding · Production release · Env vars |

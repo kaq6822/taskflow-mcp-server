@@ -17,6 +17,8 @@ export type Screen =
 
 export type Toast = { id: string; msg: string; kind: 'ok' | 'err' | 'info' };
 
+export type RunPrompt = { jobId: string; initial: Record<string, string> };
+
 type LiveRun = {
   id: number;
   job: string;
@@ -40,6 +42,8 @@ type State = {
   keys: Key[];
 
   liveRun: LiveRun | null;
+  /** Open while the operator fills in a Job's run params before triggering. */
+  runPrompt: RunPrompt | null;
   toasts: Toast[];
   lang: Lang;
 
@@ -56,7 +60,11 @@ type State = {
   refreshKeys: () => Promise<unknown>;
   refreshAll: () => Promise<unknown>;
 
-  startRun: (jobId: string) => Promise<void>;
+  /** Without `params`, a Job that declares params opens the prompt instead. */
+  startRun: (jobId: string, params?: Record<string, string>) => Promise<void>;
+  /** Open the prompt with `initial` values over the Job's defaults (re-run). */
+  promptRun: (jobId: string, initial?: Record<string, string>) => void;
+  closeRunPrompt: () => void;
   cancelRun: (runId?: number) => Promise<void>;
   deleteJob: (jobId: string) => Promise<void>;
 
@@ -125,6 +133,7 @@ export const useStore = create<State>()(
       keys: [],
 
       liveRun: null,
+      runPrompt: null,
       toasts: [],
       lang: detectInitialLang(),
 
@@ -157,9 +166,23 @@ export const useStore = create<State>()(
       },
       dismissToast: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 
-      startRun: async (jobId: string) => {
+      promptRun: (jobId, initial = {}) => {
+        const declared = get().jobs.find((j) => j.id === jobId)?.params ?? [];
+        const values: Record<string, string> = {};
+        // Only declared names: a re-run of an older run must not carry a param
+        // the Job has since dropped, which the backend rejects as UNKNOWN_PARAM.
+        for (const p of declared) values[p.name] = initial[p.name] ?? p.default ?? '';
+        set({ runPrompt: { jobId, initial: values } });
+      },
+      closeRunPrompt: () => set({ runPrompt: null }),
+
+      startRun: async (jobId: string, params?: Record<string, string>) => {
+        if (params === undefined && (get().jobs.find((j) => j.id === jobId)?.params?.length ?? 0) > 0) {
+          get().promptRun(jobId);
+          return;
+        }
         try {
-          const run = await api.startRun(jobId);
+          const run = await api.startRun(jobId, params ? { params } : {});
           const live: LiveRun = {
             id: run.id,
             job: run.job_id,
@@ -171,7 +194,7 @@ export const useStore = create<State>()(
             dur: 0,
             status: 'RUNNING',
           };
-          set({ liveRun: live });
+          set({ liveRun: live, runPrompt: null });
           get().pushToast(translations[get().lang].toast_run_started(run.id));
 
           const close = subscribeRun(run.id, (ev) => {

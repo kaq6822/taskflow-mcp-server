@@ -98,6 +98,7 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
   "artifact_refs": {
     "dist": { "ref": "uploads://web-dist@v1.24.3", "sha256": "a9f3…" }
   },
+  "params": { "branch": "release/1.24" },
   "steps": [
     { "id": "pull", "state": "SUCCESS", "elapsed_sec": 2.1 }
   ],
@@ -111,7 +112,7 @@ MCP 서버는 다음 툴을 노출한다. 호출 규칙·응답 스키마·실�
 ### 2.4 Stream 이벤트 포맷
 
 ```
-event: run.started     data: { run_id, job_id, at }
+event: run.started     data: { run_id, job_id, at, artifacts, params }
 event: step.started    data: { step_id, cmd, timeout }
 event: step.log        data: { step_id, ts, lvl, text }
 event: step.finished   data: { step_id, state, elapsed_sec }
@@ -125,6 +126,8 @@ event: run.finished    data: { status, failed_step?, err_message?, duration_sec 
 | 400 `INVALID_ARTIFACT` | 참조를 쓸 수 없음 | `uploads://<name>@<ver>` 파싱 실패 · alias에 빈 참조 전달 · 같은 alias 중복 전달 |
 | 400 `UNKNOWN_ALIAS` | Job이 선언하지 않은 alias | `artifact_refs` 키가 `consumesArtifacts`에 없음 |
 | 400 `MISMATCH` | alias와 다른 아티팩트 | 참조가 선언된 name과 다른 아티팩트를 가리킴 |
+| 400 `INVALID_PARAM` | 파라미터 값을 쓸 수 없음 | 기본값 없는 파라미터 누락 · `pattern` 불일치 · 문자열 아님 · 같은 이름 중복 전달 |
+| 400 `UNKNOWN_PARAM` | Job이 선언하지 않은 파라미터 | `params` 키가 Job의 `params` 선언에 없음 |
 | 409 `NOT_READY` | 스캔 미완료 | 아티팩트 `status != READY` |
 | 401 `UNAUTH` | Bearer 누락/유효하지 않은 key | Key 검증 실패 |
 | 403 `DENY` | scope 미매칭 | `run:<job_id>` 없음 |

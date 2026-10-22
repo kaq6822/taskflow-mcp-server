@@ -240,6 +240,19 @@ function OverviewTab({
                 </div>
               </>
             )}
+            {(job.params?.length ?? 0) > 0 && (
+              <>
+                <div className="k">Params</div>
+                <div className="v">
+                  {job.params.map((p) => (
+                    <div key={p.name}>
+                      {p.name} = {p.default ?? <span style={{ color: 'var(--warn)' }}>{t.param_required}</span>}
+                      <span className="dim"> → PARAM_{p.name.toUpperCase()}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
         <div className="card">
@@ -391,6 +404,30 @@ export function YamlRender({ job }: { job: Job }) {
         </>
       )}
       {ln(<><span className="y-key">on_failure</span>: {job.on_failure}</>)}
+      {(job.params?.length ?? 0) > 0 && (
+        <>
+          {ln(<><span className="y-key">params</span>:</>)}
+          {job.params.map((p) => (
+            <div key={p.name}>
+              {ln(<>  - <span className="y-key">name</span>: {p.name}</>)}
+              {ln(
+                <>
+                  {'    '}
+                  <span className="y-key">default</span>:{' '}
+                  {p.default === null ? 'null' : <span className="y-str">"{p.default}"</span>}
+                </>
+              )}
+              {p.pattern &&
+                ln(
+                  <>
+                    {'    '}
+                    <span className="y-key">pattern</span>: <span className="y-str">"{p.pattern}"</span>
+                  </>
+                )}
+            </div>
+          ))}
+        </>
+      )}
       {ln(<><span className="y-key">steps</span>:</>)}
       {job.steps.map((st) => (
         <div key={st.id}>

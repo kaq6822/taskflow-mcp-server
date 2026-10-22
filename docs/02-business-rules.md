@@ -316,7 +316,7 @@ Developer                AI Agent              TaskFlow MCP             Worker
 - 호출: `run_job(job_id, { mode, artifact_refs?, params?, actor? })`
   - `mode`: `'sync' | 'async' | 'stream'` (§10.3 참고).
   - `artifact_refs`: `{alias: 'uploads://<name>@<ver|latest>'}` 맵. 생략한 alias는 `@latest`로 해석된다. alias 키는 대소문자를 구분하지 않는다(`jar` 선언에 `JAR` 전달 가능). Job이 선언하지 않은 alias는 `UNKNOWN_ALIAS`, 참조가 다른 아티팩트를 가리키면 `MISMATCH`로 거부된다. 생략과 달리 **빈 참조를 명시적으로 전달하면** `@latest`로 대체하지 않고 `INVALID_ARTIFACT`로 거부한다.
-  - `params`: Job 정의에서 허용된 key만 통과 (unknown key는 DENY).
+  - `params`: `{name: value}` 문자열 맵. Job의 `params` 선언에 있는 이름만 통과하고, 선언에 없는 이름은 `UNKNOWN_PARAM`으로 거부한다(대소문자 무시). 생략한 파라미터는 선언의 `default`, `default`가 없으면 `INVALID_PARAM`. `pattern`이 있으면 값 **전체**가 일치해야 하며, 문자열이 아니거나 빈 값·앞뒤 공백·제어문자·유효하지 않은 UTF-8·1024자 초과도 `INVALID_PARAM`. 해석된 전체 값(기본값 포함)은 Run에 고정되고 step은 `PARAM_<NAME>`으로 받는다 — step `env`로 덮어쓸 수 없다.
 - scope 검증 실패 시 **DENY + audit `auth.fail`** — Run은 생성되지 않음.
 - 동시성 검사: 해당 Job에 `liveRun`이 있으면 거부(429 또는 409) + 기존 run_id 반환.
 - Run 생성 시 audit `mcp.run` · `who=<key.label>` · `target=<job_id> #<run_id>`.

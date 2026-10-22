@@ -12,6 +12,7 @@ from app.models import Job, Run
 from app.schemas import JobCreate, JobOut, JobUpdate
 from app.services.artifacts import ArtifactValidationError, validate_consumes
 from app.services.audit import append_event
+from app.services.params import ParamValidationError, validate_params
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -38,12 +39,14 @@ async def create_job(
         raise HTTPException(409, "job already exists")
     steps_raw = [s.model_dump() for s in body.steps]
     consumes_raw = [c.model_dump() for c in body.consumes_artifacts]
+    params_raw = [p.model_dump() for p in body.params]
     try:
         validate_consumes(consumes_raw)
+        validate_params(params_raw)
         validate_steps(steps_raw)
         for s in steps_raw:
             check_forbidden_state_command(s["cmd"])
-    except (DagValidationError, PolicyError, ArtifactValidationError) as e:
+    except (DagValidationError, PolicyError, ArtifactValidationError, ParamValidationError) as e:
         await append_event(
             session,
             who=_actor(request),
@@ -65,6 +68,7 @@ async def create_job(
         concurrency=body.concurrency,
         on_failure=body.on_failure,
         consumes_artifacts=consumes_raw,
+        params=params_raw,
         steps=steps_raw,
     )
     session.add(job)
@@ -97,10 +101,13 @@ async def update_job(
     # treated as "not provided": writing it through persists a NULL that makes
     # every later JobOut serialization fail, bricking the jobs API.
     data = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
-    if "consumes_artifacts" in data:
+    if "consumes_artifacts" in data or "params" in data:
         try:
-            validate_consumes(data["consumes_artifacts"])
-        except ArtifactValidationError as e:
+            if "consumes_artifacts" in data:
+                validate_consumes(data["consumes_artifacts"])
+            if "params" in data:
+                validate_params(data["params"])
+        except (ArtifactValidationError, ParamValidationError) as e:
             await append_event(
                 session,
                 who=_actor(request),
@@ -111,6 +118,10 @@ async def update_job(
                 result="DENY",
             )
             raise HTTPException(400, str(e))
+    if "params" in data:
+        # `exclude_unset` above recurses into the entries and drops an omitted
+        # `default`/`pattern`; store the full shape so readers see every key.
+        data["params"] = [p.model_dump() for p in body.params]
     if "steps" in data:
         steps_raw = [s.model_dump() if hasattr(s, "model_dump") else s for s in data["steps"]]
         try:

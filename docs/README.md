@@ -14,6 +14,7 @@
 | [getting-started.md](./getting-started.md) | 설치 · 첫 Job 만들기 · Step 작업 디렉토리(cwd) |
 | [artifacts.md](./artifacts.md) | 업로드 · Job에서 alias 선언 · step에서 `ARTIFACT_*` 사용 · 버전 고정 |
 | [artifact-jobs.md](./artifact-jobs.md) | 아티팩트를 쓰는 Job 작성법 · 판정/실패 처리 · 안티패턴 |
+| [run-params.md](./run-params.md) | 실행 시 값 전달(브랜치 등) · Job에서 선언 · step에서 `PARAM_*` 사용 |
 | [mcp-api.md](./mcp-api.md) | Key 발급 · JSON-RPC 호출 · 도구 목록 · Claude Desktop 연동 |
 | [rest-api.md](./rest-api.md) | 엔드포인트 · SSE 이벤트 포맷 · 오류 코드 |
 | [operations.md](./operations.md) | 실행 모드(A/B/C) · 네트워크 바인딩 · 프로덕션 릴리즈 · 환경변수 |
