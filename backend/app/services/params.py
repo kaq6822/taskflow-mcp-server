@@ -39,6 +39,9 @@ def _value_problem(value: Any, pattern: str | None) -> str | None:
     # script quietly act on whatever its fallback is (`git checkout origin/`).
     if not value.strip():
         return "must not be empty"
+    # `"main "` would reach the step as-is and name a ref that does not exist.
+    if value != value.strip():
+        return "must not have leading or trailing whitespace"
     if _CONTROL.search(value):
         return "must not contain control characters"
     try:
@@ -77,6 +80,9 @@ def validate_params(entries: list[dict]) -> None:
         seen.add(key)
         pattern = entry.get("pattern")
         if pattern is not None:
+            # "" only fullmatches the empty value, which is always rejected.
+            if not pattern:
+                raise ParamValidationError(f"param {name!r}: pattern must not be empty")
             try:
                 re.compile(pattern)
             except re.error as e:

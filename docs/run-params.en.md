@@ -27,7 +27,7 @@ Same principles as artifact aliases: **undeclared names are rejected**, resolved
 | `default` | | Used when a run omits the param. **`null` makes the param required** |
 | `pattern` | | Python regex matched against the **whole** value (`fullmatch`). The `default` must pass it too, or the Job is not saved |
 
-> **Without a `pattern`, any caller with run permission (`run:<job_id>`) can pass arbitrary strings — spaces, values starting with `-`, and so on.** The server itself only rejects empty values, control characters (including newlines), invalid UTF-8, and values over 1024 characters. When a value ends up as a command argument, always set a pattern and forbid a leading `-` (restrict the first character as in the example). Always quote it in scripts: `"$PARAM_X"`.
+> **Without a `pattern`, any caller with run permission (`run:<job_id>`) can pass arbitrary strings — spaces, values starting with `-`, and so on.** The server itself only rejects empty values, leading/trailing whitespace, control characters (including newlines), invalid UTF-8, and values over 1024 characters. When a value ends up as a command argument, always set a pattern and forbid a leading `-` (restrict the first character as in the example). Always quote it in scripts: `"$PARAM_X"`. Patterns are matched on the event loop, so avoid nested repetition like `([a-z]+)+` — a caller with run permission could stall the server with a long value.
 
 ```bash
 curl -X POST http://localhost:8000/api/jobs \
@@ -84,6 +84,6 @@ Each step log starts with `params · PARAM_BRANCH=feature/x`. **Values are kept 
 | Code | REST | Meaning |
 |---|---|---|
 | `UNKNOWN_PARAM` | 400 | Passed a name the Job does not declare |
-| `INVALID_PARAM` | 400 | Required param missing · `pattern` mismatch · not a string · empty · contains control characters · invalid UTF-8 · over 1024 chars · same name given twice |
+| `INVALID_PARAM` | 400 | Required param missing · `pattern` mismatch · not a string · empty · leading/trailing whitespace · contains control characters · invalid UTF-8 · over 1024 chars · same name given twice |
 
 A rejected trigger creates no run and is audited with `result=DENY`. Sending `params` to a Job that declares none is also `UNKNOWN_PARAM` — it is not silently ignored.

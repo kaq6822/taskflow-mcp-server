@@ -58,6 +58,12 @@ def test_default_must_satisfy_its_own_pattern():
         validate_params([{"name": "branch", "default": "bad branch", "pattern": r"[a-z]+"}])
 
 
+def test_empty_pattern_is_rejected():
+    """It could only ever match the empty value, which is itself rejected."""
+    with pytest.raises(ParamValidationError, match="pattern"):
+        validate_params([{"name": "branch", "pattern": ""}])
+
+
 def test_empty_default_is_rejected():
     """Blank is not a usable value, so it cannot be the fallback either."""
     with pytest.raises(ParamValidationError, match="default"):
@@ -111,7 +117,7 @@ def test_pattern_is_matched_against_the_whole_value():
 
 @pytest.mark.parametrize(
     "value",
-    [None, 3, ["dev"], "", "   ", "a\x00b", "a\nforged log line", "\ud800", "x" * 1025],
+    [None, 3, ["dev"], "", "   ", "main ", " main", "a\x00b", "a\nforged log line", "\ud800", "x" * 1025],
 )
 def test_unusable_values_are_rejected(value):
     """An explicit null must not quietly fall back to the default either. A
@@ -190,11 +196,14 @@ async def test_pinned_params_reach_every_step_and_beat_step_env(session, monkeyp
         return WorkerResult(state="SUCCESS", elapsed=0.0, exit_code=0)
 
     monkeypatch.setattr("app.engine.run_engine.execute_argv", fake_execute_argv)
+    # Inherited from the server's environment, never declared by the job.
+    monkeypatch.setenv("PARAM_STRAY", "leak")
 
     await engine._run_loop_body(job.id, run.id)
 
     assert [e["PARAM_BRANCH"] for e in seen] == ["feature/x", "feature/x"]
     assert seen[1]["HARMLESS"] == "1"
+    assert all("PARAM_STRAY" not in e for e in seen)
 
 
 @pytest.mark.asyncio

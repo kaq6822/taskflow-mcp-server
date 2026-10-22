@@ -694,7 +694,9 @@ class RunEngine:
         # P2-6: merge step-level env onto the worker process env so jobs can
         # configure per-step variables. Pass through the SECRET_* filter so
         # secret names still get masked in logs.
-        base_env = dict(os.environ)
+        # A PARAM_* inherited from the server's own environment would look to
+        # the step like a declared param that the run never recorded.
+        base_env = {k: v for k, v in os.environ.items() if not k.startswith("PARAM_")}
         base_env.update(step_spec.get("env", {}))
         # ARTIFACT_* and PARAM_* are applied last on purpose: these values are
         # pinned on the Run, and letting a step override them would let the

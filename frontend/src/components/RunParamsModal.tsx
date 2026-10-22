@@ -40,7 +40,9 @@ function RunParamsDialog({ prompt }: { prompt: RunPrompt }) {
   const submit = async () => {
     if (inFlight.current || missing.length > 0) return;
     const given = Object.fromEntries(
-      job.params.filter((p) => values[p.name]?.trim()).map((p) => [p.name, values[p.name]])
+      job.params
+        .filter((p) => values[p.name]?.trim())
+        .map((p) => [p.name, values[p.name].trim()])
     );
     inFlight.current = true;
     setSubmitting(true);

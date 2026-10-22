@@ -807,7 +807,9 @@ function MetaEditor({
                   placeholder={t.params_default_ph}
                   value={p.default ?? ''}
                   // Empty default = required at trigger time.
-                  onChange={(e) => patchParam(i, { default: e.target.value || null })}
+                  onChange={(e) =>
+                    patchParam(i, { default: e.target.value.trim() ? e.target.value : null })
+                  }
                 />
                 <input
                   className="input mono sm"
