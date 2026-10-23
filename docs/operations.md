@@ -126,7 +126,7 @@ TASKFLOW_ENV=production \
 
 리버스 프록시(Nginx/Caddy)를 쓰는 경우 `/`와 `/api/*`를 backend 포트로, `/mcp`를 MCP 포트로 각각 프록시하면 됩니다. HTTPS 종단도 리버스 프록시 계층에서 처리하는 것을 권장.
 
-Backend와 MCP 서버는 각자 Run Engine을 내장한 별도 프로세스입니다. MCP `run_job`으로 시작한 Run은 MCP 서버 프로세스에서 실행되므로, MCP 서버를 내리면 그 프로세스에서 진행 중이던 Run도 함께 중단됩니다. 프로세스가 내려가며 끊긴 Run(Backend 재기동 포함)은 DB에 `RUNNING`으로 남으므로 `POST /api/runs/{id}/cancel` 또는 UI의 정지 버튼으로 정리하세요.
+Backend와 MCP 서버는 각자 Run Engine을 내장한 별도 프로세스입니다. MCP `run_job`으로 시작한 Run은 MCP 서버 프로세스에서 실행되므로, MCP 서버를 내리면 그 프로세스에서 진행 중이던 Run도 함께 중단됩니다. 프로세스가 내려가며 끊긴 Run(Backend 재기동 포함)은 그 프로세스가 다시 기동할 때 `FAILED`(`서버 재시작으로 중단`)로 정리됩니다. 한 Job에는 `RUNNING` Run이 하나만 허용되므로, 내려간 프로세스를 다시 띄우기 전까지는 그 Job을 새로 실행할 수 없습니다 — 기다릴 수 없다면 `POST /api/runs/{id}/cancel` 또는 UI의 정지 버튼으로 정리하세요. `0005_single_running_run` 이전에 시작된 Run은 자동 정리 대상이 아닙니다.
 
 ## 업그레이드
 

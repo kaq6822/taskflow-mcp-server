@@ -126,7 +126,7 @@ TASKFLOW_ENV=production \
 
 When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend port, and `/mcp` to the MCP port. HTTPS termination is recommended at the reverse proxy layer.
 
-The backend and the MCP server are separate processes, each embedding its own Run Engine. A run started with MCP `run_job` executes in the MCP server process, so stopping the MCP server also stops the runs in progress there. A run cut off by its process going down (backend restarts included) stays `RUNNING` in the DB; clean it up with `POST /api/runs/{id}/cancel` or the stop button in the UI.
+The backend and the MCP server are separate processes, each embedding its own Run Engine. A run started with MCP `run_job` executes in the MCP server process, so stopping the MCP server also stops the runs in progress there. A run cut off by its process going down (backend restarts included) is finalized as `FAILED` (`서버 재시작으로 중단`) when that process starts again. A job allows only one `RUNNING` run, so the job cannot run again until then — if you cannot wait, clean it up with `POST /api/runs/{id}/cancel` or the stop button in the UI. Runs started before `0005_single_running_run` are not finalized automatically.
 
 ## Upgrading
 
