@@ -40,7 +40,7 @@ make build
 make start-bg     # nohup 기반. logs/backend.pid + logs/taskflow.log 생성
 make logs         # tail -f logs/taskflow.log
 make status       # running 여부 · pid · port
-make stop         # 정지 (pidfile + pkill fallback, 이전 2프로세스 구성의 프로세스도 종료)
+make stop         # 정지 — SIGTERM 후 최대 20초(STOP_TIMEOUT_SEC) 대기, 남으면 SIGKILL. 실행 중 Run은 `서버 재시작으로 중단`으로 정리. 이전 2프로세스 구성도 종료
 ```
 
 포트/바인딩 변경은 `make start-bg API_PORT=80 MCP_PORT=7391` 식으로.

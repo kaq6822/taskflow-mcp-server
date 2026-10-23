@@ -40,7 +40,7 @@ make build
 make start-bg     # nohup-based. creates logs/backend.pid + logs/taskflow.log
 make logs         # tail -f logs/taskflow.log
 make status       # running status · pid · port
-make stop         # stop (pidfile + pkill fallback, also kills processes of the old two-process layout)
+make stop         # stop — SIGTERM, wait up to 20s (STOP_TIMEOUT_SEC), then SIGKILL. Running runs are recorded as `서버 재시작으로 중단`. Also stops the old two-process layout
 ```
 
 Change ports/binding with `make start-bg API_PORT=80 MCP_PORT=7391`.
