@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from app.db import SessionLocal, get_session
 from app.engine.run_engine import JobBusyError, RunEngine
 from app.main import app
-from app.models import Job, Run
+from app.models import Job, Run, RunStep
 
 
 def _job() -> Job:
@@ -45,6 +45,13 @@ async def _running_count() -> int:
                 select(func.count()).where(Run.job_id == "once-job", Run.status == "RUNNING")
             )
         ).scalar_one()
+
+
+async def _step_state(run_id: int) -> str | None:
+    async with SessionLocal() as s:
+        return (
+            await s.execute(select(RunStep.state).where(RunStep.run_id == run_id))
+        ).scalar_one_or_none()
 
 
 @pytest.mark.asyncio
@@ -192,3 +199,49 @@ async def test_startup_recovery_finalizes_only_this_process_runs(session):
         assert (await s.get(Run, theirs)).status == "RUNNING"
     # The job accepts a new run again.
     assert await _trigger(RunEngine("api")) != mine
+
+
+@pytest.mark.asyncio
+async def test_cancel_from_the_other_process_stops_the_step(session, monkeypatch):
+    """The cancelling process has no task for the run, so it can only mark the
+    row. The owning engine must notice, kill the step, and keep the run FAILED
+    rather than letting the finished step report SUCCESS."""
+    import sys
+    import time
+
+    from app.engine import run_engine as re_mod
+
+    monkeypatch.setattr(re_mod, "CANCEL_POLL_SEC", 0.1)
+    job = _job()
+    job.steps = [
+        {
+            "id": "s1",
+            "cmd": [sys.executable, "-c", "import time; time.sleep(30)"],
+            "timeout": 60,
+            "deps": [],
+        }
+    ]
+    session.add(job)
+    await session.commit()
+
+    owner = RunEngine("mcp")
+    run_id = await _trigger(owner)
+    owner.launch(run_id)
+    task = owner._tasks[run_id]
+    # Let the step's subprocess start.
+    for _ in range(50):
+        if await _step_state(run_id) == "RUNNING":
+            break
+        await asyncio.sleep(0.1)
+
+    began = time.monotonic()
+    async with SessionLocal() as s:
+        assert await RunEngine("api").cancel(s, run_id) is not None
+        await s.commit()
+    await asyncio.wait_for(task, timeout=10)
+
+    assert time.monotonic() - began < 10
+    async with SessionLocal() as s:
+        assert (await s.get(Run, run_id)).status == "FAILED"
+    assert await _step_state(run_id) == "FAILED"
+    assert owner.live_run_for("once-job") is None
