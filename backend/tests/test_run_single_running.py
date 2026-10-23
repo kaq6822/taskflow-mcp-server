@@ -1,9 +1,8 @@
 """A job has at most one run in progress, however the triggers interleave.
 
-The backend and the MCP server are separate processes, each with its own
-`RunEngine`. Two engine instances on separate sessions stand in for them here:
-in-memory state cannot see across, so only the database index can refuse the
-second start.
+The REST API and the MCP endpoint share one `RunEngine` (`python -m app`), but
+its lookup and insert are not atomic: two triggers on separate sessions can
+both pass the lookup. The database index is what refuses the second insert.
 """
 from __future__ import annotations
 
@@ -14,7 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from app.db import SessionLocal, get_session
-from app.engine.run_engine import JobBusyError, RunEngine
+from app.engine.run_engine import INTERRUPTED_MESSAGE, JobBusyError, RunEngine, get_engine
 from app.main import app
 from app.models import Job, Run, RunStep
 
@@ -55,12 +54,30 @@ async def _step_state(run_id: int) -> str | None:
 
 
 @pytest.mark.asyncio
-async def test_concurrent_starts_from_two_processes_create_one_run(session):
+async def test_concurrent_starts_create_one_run(session, monkeypatch):
     session.add(_job())
     await session.commit()
 
+    # Hold both triggers after their lookup until both have looked, so both
+    # see a free job — the interleaving that used to start two runs.
+    engine = RunEngine()
+    real = RunEngine.running_run_id
+    looked = 0
+    both_looked = asyncio.Event()
+
+    async def lookup_then_wait(s, job_id):
+        nonlocal looked
+        found = await real(s, job_id)
+        looked += 1
+        if looked == 2:
+            both_looked.set()
+        if looked <= 2:
+            await both_looked.wait()
+        return found
+
+    monkeypatch.setattr(engine, "running_run_id", lookup_then_wait)
     results = await asyncio.gather(
-        _trigger(RunEngine()), _trigger(RunEngine()), return_exceptions=True
+        _trigger(engine), _trigger(engine), return_exceptions=True
     )
 
     started = [r for r in results if isinstance(r, int)]
@@ -110,9 +127,9 @@ async def test_finished_run_frees_the_job(session):
 
 
 @pytest.mark.asyncio
-async def test_rest_trigger_conflicts_with_a_run_owned_by_the_other_process(session):
-    """A run started through MCP lives only in the MCP process's engine. The
-    REST trigger must still answer 409 with that run's id."""
+async def test_rest_trigger_conflicts_with_a_run_started_elsewhere(session):
+    """A run started by any engine — here one the REST handler has never seen —
+    makes the REST trigger answer 409 with that run's id."""
     session.add(_job())
     await session.commit()
     other = await _trigger(RunEngine())
@@ -172,46 +189,32 @@ async def test_idempotency_replay_still_wins_over_busy(session):
 
 
 @pytest.mark.asyncio
-async def test_startup_recovery_finalizes_only_this_process_runs(session):
+async def test_startup_recovery_finalizes_leftover_runs(session):
     """After a restart a RUNNING row has no task behind it and would block the
-    job forever. Each process finalizes its own; the other process may still
-    be executing its runs."""
+    job forever. Startup fails every such run, since all runs belong to this
+    one process."""
     session.add(_job())
-    other_job = _job()
-    other_job.id = "mcp-job"
-    session.add(other_job)
     await session.commit()
+    left = await _trigger(RunEngine())
 
-    mine = await _trigger(RunEngine("api"))
+    recovered = await RunEngine().recover_orphans()
+
+    assert recovered == [left]
     async with SessionLocal() as s:
-        theirs = (
-            await RunEngine("mcp").start(
-                s, job=await s.get(Job, "mcp-job"), trigger="mcp", actor="t"
-            )
-        ).id
-        await s.commit()
-
-    recovered = await RunEngine("api").recover_orphans()
-
-    assert recovered == [mine]
-    async with SessionLocal() as s:
-        assert (await s.get(Run, mine)).status == "FAILED"
-        assert (await s.get(Run, theirs)).status == "RUNNING"
+        run = await s.get(Run, left)
+        assert run.status == "FAILED"
+        assert run.err_message == INTERRUPTED_MESSAGE
     # The job accepts a new run again.
-    assert await _trigger(RunEngine("api")) != mine
+    assert await _trigger(RunEngine()) != left
 
 
 @pytest.mark.asyncio
-async def test_cancel_from_the_other_process_stops_the_step(session, monkeypatch):
-    """The cancelling process has no task for the run, so it can only mark the
-    row. The owning engine must notice, kill the step, and keep the run FAILED
-    rather than letting the finished step report SUCCESS."""
+async def test_rest_cancel_stops_a_run_started_over_mcp(session):
+    """MCP's run_job and the REST cancel use the same engine, so the cancel
+    reaches the running step instead of only marking the row."""
     import sys
     import time
 
-    from app.engine import run_engine as re_mod
-
-    monkeypatch.setattr(re_mod, "CANCEL_POLL_SEC", 0.1)
     job = _job()
     job.steps = [
         {
@@ -224,24 +227,32 @@ async def test_cancel_from_the_other_process_stops_the_step(session, monkeypatch
     session.add(job)
     await session.commit()
 
-    owner = RunEngine("mcp")
-    run_id = await _trigger(owner)
-    owner.launch(run_id)
-    task = owner._tasks[run_id]
-    # Let the step's subprocess start.
+    engine = get_engine()
+    run_id = await _trigger(engine)  # what tools.run_job does
+    engine.launch(run_id)
+    task = engine._tasks[run_id]
     for _ in range(50):
         if await _step_state(run_id) == "RUNNING":
             break
         await asyncio.sleep(0.1)
 
+    async def override_session():
+        yield session
+
+    app.dependency_overrides[get_session] = override_session
     began = time.monotonic()
-    async with SessionLocal() as s:
-        assert await RunEngine("api").cancel(s, run_id) is not None
-        await s.commit()
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(f"/api/runs/{run_id}/cancel")
+    finally:
+        app.dependency_overrides.clear()
+    assert resp.status_code == 200, resp.text
     await asyncio.wait_for(task, timeout=10)
 
     assert time.monotonic() - began < 10
     async with SessionLocal() as s:
         assert (await s.get(Run, run_id)).status == "FAILED"
     assert await _step_state(run_id) == "FAILED"
-    assert owner.live_run_for("once-job") is None
+    assert engine.live_run_for("once-job") is None
