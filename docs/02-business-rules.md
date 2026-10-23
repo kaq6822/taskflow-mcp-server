@@ -216,7 +216,7 @@ PENDING → RUNNING → SUCCESS (exit 0)
   - `read:jobs` / `read:runs` / `read:*`
   - `run:<job-id>` — 특정 Job 실행 권한
   - `write:uploads` — 아티팩트 업로드
-- **만료 기간**: 30일 / 90일 / 180일.
+- **만료 기간**: 30일 / 90일 / 180일 / 무제한.
 - **Rate limit**: 10/min / 30/min / 60/min.
 - 발급 완료 시 **Key 값은 단 한 번만 화면에 표시**. 저장 후에는 `mcp_tk_live_XXXX••••••••YYYY` 형태로만 보임.
 
