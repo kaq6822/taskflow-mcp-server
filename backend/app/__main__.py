@@ -17,10 +17,33 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import signal
+import sys
 
 import uvicorn
 
 from app.config import settings
+
+# How long a stop waits for open connections (e.g. an MCP client's stream)
+# before closing them. uvicorn's default is to wait forever.
+GRACEFUL_SHUTDOWN_SEC = 10
+
+_SIGNALS = [signal.SIGINT, signal.SIGTERM]
+if sys.platform == "win32":
+    _SIGNALS.append(signal.SIGBREAK)
+
+
+class _Server(uvicorn.Server):
+    """uvicorn.Server without its own signal handling.
+
+    Each server would install handlers over the other's, so a signal reached
+    only the last one and the API kept serving while MCP shut down. `serve()`
+    below handles signals once, for both.
+    """
+
+    @contextlib.contextmanager
+    def capture_signals(self):
+        yield
 
 
 async def _serve(server: uvicorn.Server) -> int:
@@ -41,32 +64,51 @@ async def serve() -> int:
     from app.main import app as api_app
     from app.mcp_server.server import build_asgi
 
-    api = uvicorn.Server(
-        uvicorn.Config(api_app, host=settings.api_host, port=settings.api_port)
-    )
-    mcp = uvicorn.Server(
-        uvicorn.Config(build_asgi(), host=settings.mcp_host, port=settings.mcp_port)
-    )
+    def server(app, host: str, port: int) -> _Server:
+        return _Server(
+            uvicorn.Config(
+                app, host=host, port=port, timeout_graceful_shutdown=GRACEFUL_SHUTDOWN_SEC
+            )
+        )
 
-    # The API's lifespan creates tables and finalizes orphaned runs. MCP must
-    # not accept a run_job before that, or startup would fail a fresh run.
-    tasks = [asyncio.create_task(_serve(api))]
-    while not api.started and not tasks[0].done():
-        await asyncio.sleep(0.05)
-    if api.started:
-        tasks.append(asyncio.create_task(_serve(mcp)))
+    api = server(api_app, settings.api_host, settings.api_port)
+    mcp = server(build_asgi(), settings.mcp_host, settings.mcp_port)
+    servers = (api, mcp)
 
-    # A signal reaches only one server's handler, and a failed start ends only
-    # that server. Either way, stop the other one too.
-    await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    api.should_exit = mcp.should_exit = True
-    return max(await asyncio.gather(*tasks))
+    def on_signal(_sig, _frame) -> None:
+        # First signal: graceful stop. Another one: stop waiting.
+        stopping = api.should_exit
+        for s in servers:
+            s.should_exit = True
+            s.force_exit = s.force_exit or stopping
+
+    previous = {sig: signal.signal(sig, on_signal) for sig in _SIGNALS}
+    try:
+        # The API's lifespan creates tables and finalizes orphaned runs. MCP
+        # must not accept a run_job before that, or startup would fail a fresh
+        # run.
+        tasks = [asyncio.create_task(_serve(api))]
+        while not api.started and not tasks[0].done():
+            await asyncio.sleep(0.05)
+        if api.started and not api.should_exit:
+            tasks.append(asyncio.create_task(_serve(mcp)))
+
+        # A failed start ends only that server; stop the other one too.
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for s in servers:
+            s.should_exit = True
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        for sig, handler in previous.items():
+            signal.signal(sig, handler)
+    for r in results:
+        if isinstance(r, BaseException):
+            raise r
+    return max(results)
 
 
 def run() -> None:
-    code = 0
-    with contextlib.suppress(KeyboardInterrupt):
-        code = asyncio.run(serve())
+    code = asyncio.run(serve())
     if code:
         raise SystemExit(code)
 

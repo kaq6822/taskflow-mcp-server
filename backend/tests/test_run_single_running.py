@@ -256,3 +256,38 @@ async def test_rest_cancel_stops_a_run_started_over_mcp(session):
         assert (await s.get(Run, run_id)).status == "FAILED"
     assert await _step_state(run_id) == "FAILED"
     assert engine.live_run_for("once-job") is None
+
+
+@pytest.mark.asyncio
+async def test_shutdown_stops_running_steps(session):
+    """Stopping the process must kill step subprocesses and record the run as
+    interrupted, not leave them running past the server."""
+    import sys
+
+    job = _job()
+    job.steps = [
+        {
+            "id": "s1",
+            "cmd": [sys.executable, "-c", "import time; time.sleep(30)"],
+            "timeout": 60,
+            "deps": [],
+        }
+    ]
+    session.add(job)
+    await session.commit()
+
+    engine = RunEngine()
+    run_id = await _trigger(engine)
+    engine.launch(run_id)
+    for _ in range(50):
+        if await _step_state(run_id) == "RUNNING":
+            break
+        await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(engine.shutdown(), timeout=10)
+
+    async with SessionLocal() as s:
+        run = await s.get(Run, run_id)
+        assert run.status == "FAILED"
+        assert run.err_message == INTERRUPTED_MESSAGE
+    assert await _step_state(run_id) == "FAILED"

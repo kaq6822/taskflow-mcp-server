@@ -93,6 +93,7 @@ class RunEngine:
         self._tasks: dict[int, asyncio.Task] = {}
         self._pending_launch: dict[int, str] = {}
         self._cancelled: set[int] = set()
+        self._stopping = False
 
     def live_run_for(self, job_id: str) -> int | None:
         return self._live.get(job_id)
@@ -265,6 +266,19 @@ class RunEngine:
                 )
             await s.commit()
             return [run.id for run in orphans]
+
+    async def shutdown(self) -> None:
+        """Stop every run in progress; call when the process is stopping.
+
+        Cancelling the tasks kills their step subprocesses and records the runs
+        as interrupted. Left to the event loop's teardown, a SIGTERM exit skips
+        that and the subprocesses outlive the server.
+        """
+        self._stopping = True
+        tasks = list(self._tasks.values())
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def launch(self, run_id: int) -> None:
         """Spawn the per-run asyncio task. Call this *after* the caller's
@@ -496,7 +510,20 @@ class RunEngine:
         # Phase C — finalize Run + audit append in a single short transaction.
         async with SessionLocal() as session:
             run = await session.get(Run, run_id)
-            assert run is not None
+            if run is None:
+                # Deleted while the last step ran — still close the stream.
+                log_bus.publish(
+                    run_id,
+                    "run.finished",
+                    {
+                        "run_id": run_id,
+                        "status": "FAILED",
+                        "failed_step": failed_step,
+                        "err_message": err_message,
+                        "duration_sec": 0.0,
+                    },
+                )
+                return
             run.finished_at = utcnow()
             run.duration_sec = (run.finished_at - started_at).total_seconds()
             if run_id in self._cancelled:
@@ -610,6 +637,8 @@ class RunEngine:
                 if run is None:
                     # Deleted meanwhile — still close the stream below.
                     raise LookupError(run_id)
+                if self._stopping:
+                    run.err_message = run.err_message or INTERRUPTED_MESSAGE
                 await self._mark_cancelled(s, run)
                 await append_event(
                     s,
