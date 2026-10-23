@@ -360,7 +360,7 @@ Agent는 선택한 실행 모드에 따라 결과를 수신(§10.3).
 | `async` | `run_id`만 즉시 반환 후 종료 | 긴 Job (ETL, 대용량 배포). Agent는 이후 polling/webhook으로 완료 확인 |
 | `stream` | 연결 유지 후 step 단위 이벤트 푸시 (WebSocket/SSE) | Agent가 진행률을 실시간 보고해야 할 때 |
 
-> **구현 현황:** `stream` 모드는 미구현입니다. `sync` 대기 상한은 `TASKFLOW_MCP_MAX_SYNC_SEC`(기본 600s)만 적용되며 `job.timeout`은 반영되지 않습니다. `subscribe_run`은 WebSocket이 아니라 MCP 서버 프로세스의 최근 이벤트 스냅샷을 돌려주는 일반 tool입니다. polling·webhook 중 webhook은 미구현입니다.
+> **구현 현황:** `stream` 모드는 미구현입니다. `sync` 대기 상한은 `TASKFLOW_MCP_MAX_SYNC_SEC`(기본 600s)만 적용되며 `job.timeout`은 반영되지 않습니다. `subscribe_run`은 WebSocket이 아니라 공유 log_bus의 최근 이벤트 스냅샷을 돌려주는 일반 tool입니다. polling·webhook 중 webhook은 미구현입니다.
 
 #### sync 모드 제약
 

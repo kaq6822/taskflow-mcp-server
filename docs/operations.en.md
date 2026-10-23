@@ -12,12 +12,12 @@ Choose one of three modes. **Production deployments use B or C.**
 make dev
 ```
 
-Three processes start simultaneously:
+Two processes start simultaneously. One backend process (`python -m app --reload`, restarts on code changes) serves both the API and MCP:
 
 | Process | Port | Role |
 |---|---|---|
 | Backend | `http://localhost:8000` | REST API · SSE |
-| MCP Server | `http://localhost:7391/mcp` | MCP endpoint (Bearer auth) |
+| | `http://localhost:7391/mcp` | MCP endpoint (Bearer auth) — same process as the backend |
 | Frontend | `http://localhost:5173` | React UI (API proxied via Vite) |
 
 ### B. Production (foreground)
@@ -25,7 +25,7 @@ Three processes start simultaneously:
 ```sh
 make setup        # once
 make build        # generate frontend/dist
-make start        # backend serves SPA+API (:8000), mcp (:7391) separate
+make start        # one process: SPA+API (:8000) + MCP (:7391)
 ```
 
 Access at `http://localhost:8000` (no Vite needed; same-origin so no CORS issues). Stop with `Ctrl+C`.
@@ -37,10 +37,10 @@ Access at `http://localhost:8000` (no Vite needed; same-origin so no CORS issues
 ```sh
 make setup
 make build
-make start-bg     # nohup-based. creates logs/{backend,mcp}.pid + logs/taskflow.log
+make start-bg     # nohup-based. creates logs/backend.pid + logs/taskflow.log
 make logs         # tail -f logs/taskflow.log
 make status       # running status · pid · port
-make stop         # stop (pidfile + pkill fallback)
+make stop         # stop (pidfile + pkill fallback, also kills processes of the old two-process layout)
 ```
 
 Change ports/binding with `make start-bg API_PORT=80 MCP_PORT=7391`.
@@ -53,7 +53,7 @@ Change ports/binding with `make start-bg API_PORT=80 MCP_PORT=7391`.
 | Local dev | `make dev` | Vite binds to `localhost` only |
 | LAN dev | `make dev-lan` | Vite · API · MCP all bind `0.0.0.0` |
 | Production build | `make build` | generates `frontend/dist` |
-| Production run | `make start` | backend serves SPA+API, MCP separate |
+| Production run | `make start` | one process serves SPA+API and MCP |
 | Tests | `make test` | pytest |
 | DB migration | `make migrate` | `alembic upgrade head` — required after upgrading |
 | Reset DB | `make reset` | delete SQLite + storage, then migrate |
@@ -62,11 +62,9 @@ Change ports/binding with `make start-bg API_PORT=80 MCP_PORT=7391`.
 Individual services:
 
 ```sh
-make dev-backend   # uvicorn app.main:app :8000 (dev)
-make dev-mcp       # python -m app.mcp_server :7391 (dev)
+make dev-backend   # python -m app --reload (API :8000 + MCP :7391, dev)
 make dev-frontend  # vite :5173 (dev)
-make start-backend # production: SPA+API integrated
-make start-mcp     # production MCP
+make start-backend # production: SPA+API+MCP in one process
 ```
 
 ## Network Binding
@@ -85,7 +83,7 @@ make dev FRONTEND_HOST=0.0.0.0 API_HOST=0.0.0.0 MCP_HOST=0.0.0.0 \
 The make targets take bindings as **Make variables** (`API_HOST`/`API_PORT`/`MCP_HOST`/`MCP_PORT`/`FRONTEND_HOST`/`FRONTEND_PORT`) and hand them to each process. `TASKFLOW_*_HOST` / `TASKFLOW_*_PORT` from `.env` or the shell are overwritten by those values and have no effect there.
 
 - `FRONTEND_HOST` — Vite binding interface (passed to Vite as `TASKFLOW_FRONTEND_HOST`)
-- `API_HOST` / `MCP_HOST` — FastAPI (uvicorn `--host`) / MCP (`TASKFLOW_MCP_HOST`) binding interface
+- `API_HOST` / `MCP_HOST` — REST API (`TASKFLOW_API_HOST`) / MCP (`TASKFLOW_MCP_HOST`) binding interface. The ports are separate, so the unauthenticated `/api/*` can be bound to `127.0.0.1` while only MCP is exposed
 - `TASKFLOW_API_HOST_PUBLIC` — Vite proxy target host. `make dev-frontend` sets it to the `API_HOST` value
 - `TASKFLOW_CORS_ORIGINS` — **Comma-separated** origin whitelist. Must include the remote browser's origin when it calls `/api` directly. Vite-proxied calls are same-origin and are not affected. Use a single `*` in dev for allow-all.
 
@@ -95,8 +93,8 @@ The make targets take bindings as **Make variables** (`API_HOST`/`API_PORT`/`MCP
 
 `make start` does the following:
 
-1. Backend (uvicorn) serves **API + built SPA** from a single port — no separate Vite process, CORS issues naturally eliminated (same-origin).
-2. MCP server runs independently on port 7391 as before.
+1. Backend serves **API + built SPA** from a single port — no separate Vite process, CORS issues naturally eliminated (same-origin).
+2. MCP is served by the same process on its own port, 7391 (it starts accepting requests only after the API startup has finished).
 3. Sets `TASKFLOW_ENV=production` so CORS is locked to items listed in `TASKFLOW_CORS_ORIGINS` (`*` is automatically removed in production for safety).
 
 Example release pipeline:
@@ -116,17 +114,15 @@ make build                       # generate frontend/dist
 make start API_PORT=80
 
 # Or manually
-TASKFLOW_ENV=production \
+cd backend && TASKFLOW_ENV=production \
 TASKFLOW_FRONTEND_DIST_DIR=../frontend/dist \
-  ./backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
-
-TASKFLOW_ENV=production \
-  ./backend/.venv/bin/python -m app.mcp_server
+TASKFLOW_API_PORT=80 \
+  .venv/bin/python -m app
 ```
 
 When using a reverse proxy (Nginx/Caddy), proxy `/` and `/api/*` to the backend port, and `/mcp` to the MCP port. HTTPS termination is recommended at the reverse proxy layer.
 
-The backend and the MCP server are separate processes, each embedding its own Run Engine. A run started with MCP `run_job` executes in the MCP server process, so stopping the MCP server also stops the runs in progress there. A run cut off by its process going down (backend restarts included) is finalized as `FAILED` (`서버 재시작으로 중단`) when that process starts again. A job allows only one `RUNNING` run, so the job cannot run again until then — if you cannot wait, clean it up with `POST /api/runs/{id}/cancel` or the stop button in the UI. Runs started before `0005_single_running_run` are not finalized automatically.
+The API and MCP run in one process (`python -m app`) sharing one Run Engine. If either fails to start (port in use, etc.) or the process receives a stop signal, both go down, and stopping the process stops all runs in progress. A cut-off run is finalized as `FAILED` (`서버 재시작으로 중단`) when the process starts again. A job allows only one `RUNNING` run, so the job cannot run again until the restart — if you cannot wait, clean it up with `POST /api/runs/{id}/cancel` or the stop button in the UI. Runs started before `0005_single_running_run` are also cleaned up at startup.
 
 ## Upgrading
 
@@ -140,13 +136,14 @@ make build           # if the frontend changed — start/start-bg do not rebuild
 make stop && make start-bg   # or make start
 ```
 
+- **The process layout changed.** The backend and the MCP server used to be separate processes; now it is the single `python -m app`. When upgrading across this change, run `make stop` before `make start-bg` so the old two processes are gone (`make stop` also handles the old pid layout). Leftovers would make the new process fail to start on the port conflict.
 - **`make migrate` is required.** The table auto-creation at server start only creates missing tables; it does not add columns to existing ones. For example, run params (`0003_run_params` — `jobs.params`, `runs.params`) and run outputs (`0004_run_outputs` — `runs.outputs`) fail with `no such column` without the migration.
 - Migrations live in `backend/alembic/versions/` and are applied to the DB that `TASKFLOW_DB_URL` points at. Back up `backend/taskflow.db` first.
 - `make dev` serves the sources through Vite, so it needs no `make build`.
 
 ## Environment Variable Reference
 
-`TASKFLOW_*_HOST` / `TASKFLOW_*_PORT` are what a manually launched process reads. The make targets overwrite them with Make variables, as described in [Network Binding](#network-binding).
+`TASKFLOW_*_HOST` / `TASKFLOW_*_PORT` are what a manually launched `python -m app` reads. The make targets overwrite them with Make variables, as described in [Network Binding](#network-binding).
 
 | Variable | Default | Description |
 |---|---|---|
@@ -154,8 +151,8 @@ make stop && make start-bg   # or make start
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | Artifact/log root |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Default subprocess cwd when a step does not set `cwd` |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend binding. uvicorn does not read these; it uses the `--host`/`--port` make passes (`API_HOST`/`API_PORT`, default `0.0.0.0`/`8000`). `TASKFLOW_API_PORT` is used as the Vite proxy target port. **Defaults to every interface, and `/api/*` has no auth** — set `API_HOST=127.0.0.1` to keep it loopback-only |
-| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding (read by `python -m app.mcp_server`) |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | REST API binding (read by `python -m app`; make passes `API_HOST`/`API_PORT`). `TASKFLOW_API_PORT` is used as the Vite proxy target port. **Defaults to every interface, and `/api/*` has no auth** — set `API_HOST=127.0.0.1` to keep it loopback-only |
+| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP binding (read by `python -m app`) |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | Max wait for `run_job(sync)` |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite binding |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | External API host (Vite proxy target) |
@@ -187,6 +184,6 @@ Using `cd /path` as a separate step is not supported. `cd` is shell/process stat
 | `backend/storage/runtime/` | Default Step subprocess cwd (`TASKFLOW_STEP_CWD` default) |
 | `backend/storage/logs/<run_id>/<step_id>.log` | Step log files |
 | `backend/storage/artifacts/` | Uploaded artifact binaries |
-| `logs/taskflow.log`, `logs/*.pid` | `make start-bg` log / PID files |
+| `logs/taskflow.log`, `logs/backend.pid` | `make start-bg` log / PID files |
 
 All runtime data is gitignored. Full reset with `make reset`.

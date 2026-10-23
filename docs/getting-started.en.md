@@ -32,12 +32,12 @@ Starts with an empty DB. No seed data is loaded.
 make dev
 ```
 
-Three processes start simultaneously:
+Two processes start simultaneously:
 
 | Process | Port | Role |
 |---|---|---|
-| Backend | `http://localhost:8000` | REST API · SSE |
-| MCP Server | `http://localhost:7391/mcp` | MCP endpoint (Bearer auth) |
+| Backend (`python -m app`) | `http://localhost:8000` | REST API · SSE |
+| | `http://localhost:7391/mcp` | MCP endpoint (Bearer auth) — same process as the backend |
 | Frontend | `http://localhost:5173` | React UI (API proxied via Vite) |
 
 Open **http://localhost:5173** in your browser. On first run, the backend prints an admin session token to the console once (for future UI auth activation).

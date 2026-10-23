@@ -37,7 +37,7 @@ Step 환경(서버 프로세스에서 상속한 변수 + Step `env`)에 `SECRET_
 - Step `env`에 적은 값은 Job 정의의 일부로 **DB에 평문 저장**되고, `GET /api/jobs`와 MCP `list_jobs`/`get_job`(`read:jobs`) 응답에 그대로 포함됩니다.
 - `secret.read` audit 이벤트는 기록되지 않습니다(미구현).
 
-실제 비밀값은 Job 정의에 넣지 말고 백엔드·MCP 서버 프로세스의 환경변수(step이 상속)나 step 스크립트가 읽는 파일로 전달하세요.
+실제 비밀값은 Job 정의에 넣지 말고 백엔드 프로세스(API·MCP 공용)의 환경변수(step이 상속)나 step 스크립트가 읽는 파일로 전달하세요.
 
 ### 4. 예약 환경변수 (`PARAM_*` · `ARTIFACT_*`)
 

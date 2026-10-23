@@ -20,7 +20,7 @@ backend/.venv/bin/pip install "greenlet>=3.0"
 
 ### 업그레이드 후 `no such column: jobs.params` / `runs.params` / `runs.outputs`
 
-새 버전의 DB 마이그레이션(`0003_run_params`, `0004_run_outputs`, `0005_single_running_run` 등)이 적용되지 않았습니다. 서버 기동 시의 테이블 자동 생성은 기존 테이블에 컬럼을 추가하지 않습니다.
+새 버전의 DB 마이그레이션(`0003_run_params`, `0004_run_outputs`, `0005_single_running_run`, `0006_drop_run_runner` 등)이 적용되지 않았습니다. 서버 기동 시의 테이블 자동 생성은 기존 테이블에 컬럼을 추가하지 않습니다.
 
 ```sh
 make migrate
@@ -66,10 +66,6 @@ HTTP는 200이지만 tool 결과가 오류(`isError: true`)입니다. Key의 sco
 - `run:foo`만 가진 Key로 `run_job(job_id="bar")` 호출 → DENY
 
 Scope 매칭 규칙은 [MCP API §2](./mcp-api.md#2-scope-규칙).
-
-### MCP로 실행한 Run이 UI Monitor/SSE에서 실시간으로 보이지 않음
-
-MCP로 트리거한 Run은 MCP 서버 프로세스 안에서 실행되고, 실시간 이벤트도 그 프로세스에만 있습니다. Backend의 `GET /api/runs/{id}/stream`에는 heartbeat만 옵니다. 상태와 결과는 DB에 기록되므로 `GET /api/runs/{id}`·MCP `get_run`으로 확인하고, 로그는 `GET /api/runs/{id}/logs/{step_id}`로 보세요.
 
 ## 실행
 
@@ -118,9 +114,9 @@ Backend 로그에서 `Task exception was never retrieved`를 확인하세요. �
 
 ### 실행 중인 Run이 없는데 트리거가 `409 CONFLICT`
 
-Job당 `RUNNING` Run은 DB에서 1개로 제한됩니다(Backend와 MCP 서버 양쪽에 공통). 서버가 Run 도중 종료되면 그 Run은 `RUNNING`으로 남지만, 해당 서버가 다시 기동할 때 자기가 실행하던 Run을 `FAILED`(`서버 재시작으로 중단`)로 정리합니다. 다른 쪽 서버가 실행하던 Run은 건드리지 않으므로, 그 서버를 재기동하지 않으면 계속 막힙니다.
+Job당 `RUNNING` Run은 DB에서 1개로 제한됩니다. 서버가 Run 도중 종료되면 그 Run은 `RUNNING`으로 남지만, 서버가 다시 기동할 때 남아 있는 `RUNNING` Run을 모두 `FAILED`(`서버 재시작으로 중단`)로 정리합니다. 재기동 전까지는 그 Job이 계속 막힙니다. `0005_single_running_run` 이전에 시작된 Run도 같이 정리됩니다.
 
-`0005_single_running_run` 이전에 시작된 Run은 어느 서버 것인지 기록이 없어 자동 정리되지 않습니다. 409 응답의 `current_run_id`(MCP는 `… already running as #<run_id>`)를 `POST /api/runs/{id}/cancel`로 취소하면 다시 실행할 수 있습니다.
+기다릴 수 없다면 409 응답의 `current_run_id`(MCP는 `… already running as #<run_id>`)를 `POST /api/runs/{id}/cancel`로 취소하면 다시 실행할 수 있습니다.
 
 ### Step이 exit 0인데 `FAILED`가 됨
 

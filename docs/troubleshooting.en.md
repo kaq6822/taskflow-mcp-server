@@ -20,7 +20,7 @@ This is already specified in `backend/pyproject.toml`, so re-running `make setup
 
 ### `no such column: jobs.params` / `runs.params` / `runs.outputs` after upgrading
 
-The new version's DB migrations (`0003_run_params`, `0004_run_outputs`, `0005_single_running_run`, etc.) have not been applied. The table auto-creation at server start does not add columns to existing tables.
+The new version's DB migrations (`0003_run_params`, `0004_run_outputs`, `0005_single_running_run`, `0006_drop_run_runner`, etc.) have not been applied. The table auto-creation at server start does not add columns to existing tables.
 
 ```sh
 make migrate
@@ -66,10 +66,6 @@ The HTTP status is 200, but the tool result is an error (`isError: true`). The k
 - Calling `run_job(job_id="bar")` with a `run:foo`-only key → DENY
 
 See [MCP API §2](./mcp-api.en.md#2-scope-rules) for scope matching rules.
-
-### A run started over MCP does not show live in the UI Monitor / SSE
-
-A run triggered over MCP executes inside the MCP server process, and its live events exist only there. The backend's `GET /api/runs/{id}/stream` receives only heartbeats. Status and results are written to the DB, so check them with `GET /api/runs/{id}` or MCP `get_run`, and read logs with `GET /api/runs/{id}/logs/{step_id}`.
 
 ## Execution
 
@@ -118,9 +114,9 @@ Stderr is recorded in `backend/storage/logs/<run_id>/<step_id>.log`.
 
 ### Trigger returns `409 CONFLICT` although nothing is running
 
-The database allows one `RUNNING` run per job, shared by the backend and the MCP server. If a server stops mid-run, the run stays `RUNNING` until that server starts again, which finalizes its own leftover runs as `FAILED` (`서버 재시작으로 중단`). It leaves the other server's runs alone, so a run left by a server that has not restarted keeps blocking the job.
+The database allows one `RUNNING` run per job. If the server stops mid-run, the run stays `RUNNING`; when the server starts again it finalizes every leftover `RUNNING` run as `FAILED` (`서버 재시작으로 중단`). Until that restart the job stays blocked. Runs started before `0005_single_running_run` are cleaned up too.
 
-Runs started before `0005_single_running_run` do not record which server ran them and are not finalized automatically. Cancel the `current_run_id` from the 409 response (over MCP: `… already running as #<run_id>`) with `POST /api/runs/{id}/cancel`, then trigger again.
+If you cannot wait, cancel the `current_run_id` from the 409 response (over MCP: `… already running as #<run_id>`) with `POST /api/runs/{id}/cancel`, then trigger again.
 
 ### Step exits 0 but becomes `FAILED`
 

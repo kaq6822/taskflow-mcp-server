@@ -32,12 +32,12 @@ make setup
 make dev
 ```
 
-세 프로세스가 동시에 뜹니다:
+두 프로세스가 동시에 뜹니다:
 
 | 프로세스 | 포트 | 역할 |
 |---|---|---|
-| Backend | `http://localhost:8000` | REST API · SSE |
-| MCP Server | `http://localhost:7391/mcp` | MCP 엔드포인트 (Bearer 인증) |
+| Backend (`python -m app`) | `http://localhost:8000` | REST API · SSE |
+| | `http://localhost:7391/mcp` | MCP 엔드포인트 (Bearer 인증) — Backend와 같은 프로세스 |
 | Frontend | `http://localhost:5173` | React UI (API는 Vite 프록시) |
 
 브라우저로 **http://localhost:5173** 접속. 첫 실행 시 Backend가 admin 세션 토큰을 한 번 콘솔에 출력합니다 (향후 UI 인증 활성화용).

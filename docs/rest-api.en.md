@@ -80,7 +80,7 @@ event: ping            data: {}            # heartbeat after 30 seconds without 
 - In `run.started`, `artifacts` is `{alias: "uploads://<name>@<version>"}` (the pinned references) and `params` holds the param values pinned on the run.
 - `step.log`'s `lvl` is `cmd` (the command) / `dim` (meta: cwd·timeout, `artifacts · …`, `params · …`, `outputs · …`, etc.) / `info` (stdout) / `err` (stderr, failures) / `warn` / `ok`.
 - Events emitted before you subscribe are replayed first (up to the most recent 500 kept in process memory); the stream closes after `run.finished`.
-- Events live only in the process that executes the run. A run triggered over MCP executes in the MCP server process, so this endpoint receives no events for it (only heartbeats) — poll `GET /api/runs/{id}` instead.
+- A run triggered over MCP executes in the same process and log_bus, so this endpoint receives its events too.
 
 You can subscribe directly from the browser using `EventSource('/api/runs/{id}/stream')`.
 
