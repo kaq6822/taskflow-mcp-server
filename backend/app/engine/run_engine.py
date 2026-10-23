@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -59,12 +60,34 @@ def _fmt_argv(cmd: object) -> str:
 
 
 CANCELLED_MESSAGE = "사용자 취소"
+INTERRUPTED_MESSAGE = "서버 재시작으로 중단"
+
+
+class JobBusyError(Exception):
+    """The job already has a run in progress.
+
+    `current_run_id` is None only when the conflicting run finished between the
+    rejected insert and the lookup that tries to name it.
+    """
+
+    def __init__(self, job_id: str, current_run_id: int | None) -> None:
+        super().__init__(f"job {job_id} already running as #{current_run_id}")
+        self.job_id = job_id
+        self.current_run_id = current_run_id
 
 
 class RunEngine:
-    """Single-process engine. Per-job asyncio.Lock enforces concurrency=1."""
+    """Single-process engine.
 
-    def __init__(self) -> None:
+    "One run in progress per job" is enforced by the `uq_runs_job_running`
+    index, not by this object: the backend and the MCP server each hold their
+    own engine, so in-memory state cannot see the other process's runs. The
+    per-job asyncio.Lock only serialises execution inside this process — a run
+    started right after a cancel waits for the cancelled task to unwind.
+    """
+
+    def __init__(self, runner: str = "api") -> None:
+        self.runner = runner
         self._locks: dict[str, asyncio.Lock] = {}
         self._live: dict[str, int] = {}  # job_id → run_id
         self._tasks: dict[int, asyncio.Task] = {}
@@ -76,6 +99,17 @@ class RunEngine:
 
     def has_run(self, run_id: int) -> bool:
         return run_id in self._tasks
+
+    @staticmethod
+    async def running_run_id(session: AsyncSession, job_id: str) -> int | None:
+        return (
+            await session.execute(
+                select(Run.id)
+                .where(Run.job_id == job_id, Run.status == "RUNNING")
+                .order_by(Run.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
 
     async def run_exists(self, run_id: int) -> bool:
         async with SessionLocal() as s:
@@ -152,9 +186,19 @@ class RunEngine:
         params: dict[str, Any] | None = None,
         idempotency_key: str | None = None,
     ) -> Run:
-        lock = self._locks.setdefault(job.id, asyncio.Lock())
-        if lock.locked():
-            raise RuntimeError("job busy")
+        """Insert a RUNNING run for `job`; call `launch()` after committing.
+
+        Raises JobBusyError if the job already has a run in progress. The
+        lookup up front only gives an early, cheap answer; the insert is what
+        decides, since another request — in this process or the other one —
+        can get between the lookup and the insert.
+        """
+        # Read up front: the rollback below expires `job`, and touching an
+        # expired attribute would lazy-load outside the async context.
+        job_id = job.id
+        current = await self.running_run_id(session, job_id)
+        if current is not None:
+            raise JobBusyError(job_id, current)
         resolved_params = resolve_params(job.params or [], params or {})
         pinned = await self._pin_artifacts(session, job, artifact_refs or {})
         order = topo_sort(job.steps)
@@ -167,9 +211,29 @@ class RunEngine:
             artifact_refs=pinned,
             params=resolved_params,
             idempotency_key=idempotency_key,
+            runner=self.runner,
         )
         session.add(run)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            # The idempotency key is unique too. Hand that case back unchanged:
+            # callers replay the winner's run instead of reporting a conflict.
+            if idempotency_key is not None:
+                taken = (
+                    await session.execute(
+                        select(Run.id).where(Run.idempotency_key == idempotency_key)
+                    )
+                ).scalar_one_or_none()
+                if taken is not None:
+                    raise
+            current = await self.running_run_id(session, job_id)
+            # The job_id FK fails the insert too when the job is deleted
+            # concurrently; that is not a busy job.
+            if current is None and await session.get(Job, job_id) is None:
+                raise
+            raise JobBusyError(job_id, current) from None
         for sid in order:
             session.add(RunStep(run_id=run.id, step_id=sid, state="PENDING"))
         await session.flush()
@@ -177,6 +241,35 @@ class RunEngine:
         self._live[job.id] = run.id
         self._pending_launch[run.id] = job.id
         return run
+
+    async def recover_orphans(self) -> list[int]:
+        """Finalize RUNNING runs this engine's process left behind.
+
+        Call once at process startup, before serving. A run's task lives only
+        in the process that started it, so after a restart its RUNNING row is
+        an orphan — and with the one-running-run index it would refuse every
+        new run of that job. Runs of the other process are left alone: it may
+        still be executing them.
+        """
+        async with SessionLocal() as s:
+            orphans = (
+                await s.execute(
+                    select(Run).where(Run.status == "RUNNING", Run.runner == self.runner)
+                )
+            ).scalars().all()
+            for run in orphans:
+                run.err_message = run.err_message or INTERRUPTED_MESSAGE
+                await self._mark_cancelled(s, run)
+                await append_event(
+                    s,
+                    who="system",
+                    kind="job.run.fail",
+                    target=f"{run.job_id} #{run.id}",
+                    src="mcp" if self.runner == "mcp" else "web",
+                    result="FAIL",
+                )
+            await s.commit()
+            return [run.id for run in orphans]
 
     def launch(self, run_id: int) -> None:
         """Spawn the per-run asyncio task. Call this *after* the caller's
@@ -250,7 +343,7 @@ class RunEngine:
 
     async def _run_loop(self, job_id: str, run_id: int) -> None:
         """Owned by engine. Re-opens its own DB session."""
-        lock = self._locks[job_id]
+        lock = self._locks.setdefault(job_id, asyncio.Lock())
         await lock.acquire()
         try:
             try:
@@ -264,7 +357,10 @@ class RunEngine:
                 # Do not re-raise — this task is the engine's own; swallowing
                 # keeps engine bookkeeping in the `finally` below simple.
         finally:
-            self._live.pop(job_id, None)
+            # A run started after this one was cancelled may already own the
+            # slot; only clear it if it is still ours.
+            if self._live.get(job_id) == run_id:
+                self._live.pop(job_id, None)
             self._tasks.pop(run_id, None)
             self._cancelled.discard(run_id)
             lock.release()
@@ -871,6 +967,17 @@ class RunEngine:
 
 
 _ENGINE: RunEngine | None = None
+
+
+def init_engine(runner: str) -> RunEngine:
+    """Create the process-wide engine for `runner` ("api" or "mcp").
+
+    The MCP server calls this before serving; the backend relies on the
+    default from `get_engine()`.
+    """
+    global _ENGINE
+    _ENGINE = RunEngine(runner)
+    return _ENGINE
 
 
 def get_engine() -> RunEngine:

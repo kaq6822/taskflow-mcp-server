@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db import get_session
-from app.engine.run_engine import get_engine
+from app.engine.run_engine import JobBusyError, get_engine
 from app.models import Job, Run
 from app.schemas import RunCreate, RunOut
 from app.services.artifacts import ArtifactResolutionError
@@ -146,10 +146,6 @@ async def start_run(
             return existing
 
     engine = get_engine()
-    live = engine.live_run_for(job_id)
-    if live:
-        raise HTTPException(409, detail={"error": "CONFLICT", "current_run_id": live})
-
     actor = body.actor or request.headers.get("X-Actor", "admin")
     try:
         run = await engine.start(
@@ -160,6 +156,10 @@ async def start_run(
             artifact_refs=body.artifact_refs,
             params=body.params,
             idempotency_key=body.idempotency_key,
+        )
+    except JobBusyError as e:
+        raise HTTPException(
+            409, detail={"error": "CONFLICT", "current_run_id": e.current_run_id}
         )
     except (ArtifactResolutionError, ParamResolutionError) as e:
         await append_event(

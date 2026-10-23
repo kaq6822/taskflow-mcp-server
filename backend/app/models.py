@@ -2,7 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -44,8 +55,25 @@ class Job(Base):
     runs: Mapped[list[Run]] = relationship(back_populates="job", cascade="all,delete-orphan")
 
 
+# A job has at most one run in progress. The backend and the MCP server are
+# separate processes with their own in-memory engine state, so the database is
+# the only place both see — the partial unique index makes a second RUNNING row
+# for the same job fail at insert, however the two triggers interleave.
+RUNNING_RUN_INDEX = "uq_runs_job_running"
+_RUNNING = text("status = 'RUNNING'")
+
+
 class Run(Base):
     __tablename__ = "runs"
+    __table_args__ = (
+        Index(
+            RUNNING_RUN_INDEX,
+            "job_id",
+            unique=True,
+            sqlite_where=_RUNNING,
+            postgresql_where=_RUNNING,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     job_id: Mapped[str] = mapped_column(ForeignKey("jobs.id"))
@@ -69,6 +97,10 @@ class Run(Base):
     failed_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     err_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True)
+    # Which process's engine executes the run: "api" or "mcp". Each is a single
+    # process, so on its startup any RUNNING run it owns has lost its task and
+    # can be finalized. Null for runs created before this was recorded.
+    runner: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     job: Mapped[Job] = relationship(back_populates="runs")
     steps: Mapped[list[RunStep]] = relationship(

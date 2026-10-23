@@ -18,6 +18,7 @@ from app.api import stream as stream_api
 from app.bootstrap import ensure_admin_session
 from app.config import settings
 from app.db import SessionLocal, engine
+from app.engine.run_engine import get_engine
 from app.models import Base
 from app.services.artifacts import ensure_storage_dirs
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     ensure_storage_dirs()
+    await get_engine().recover_orphans()
     async with SessionLocal() as session:
         token = await ensure_admin_session(session)
         if token:

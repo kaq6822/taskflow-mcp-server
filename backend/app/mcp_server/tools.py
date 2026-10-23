@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.db import SessionLocal
 from app.engine.log_bus import log_bus
-from app.engine.run_engine import get_engine
+from app.engine.run_engine import JobBusyError, get_engine
 from app.mcp_server.auth import auth_from_context, ip_from_context
 from app.models import Artifact, Job, Run, RunStep
 from app.services.artifacts import (
@@ -287,10 +287,6 @@ def register_tools(mcp: FastMCP) -> None:
                             f"already used by another job"
                         )
                     return _run_to_dict(existing, existing.steps)
-            if engine.live_run_for(job_id):
-                raise RuntimeError(
-                    f"CONFLICT: job {job_id} already running as #{engine.live_run_for(job_id)}"
-                )
             try:
                 run = await engine.start(
                     s,
@@ -321,6 +317,8 @@ def register_tools(mcp: FastMCP) -> None:
                         f"already used by another job"
                     )
                 return _run_to_dict(winner, winner.steps)
+            except JobBusyError as e:
+                raise RuntimeError(f"CONFLICT: {e}") from e
             except (ArtifactResolutionError, ParamResolutionError) as e:
                 await append_event(
                     s,
