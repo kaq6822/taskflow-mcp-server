@@ -200,7 +200,7 @@ class KeyCreate(BaseModel):
     label: str
     scopes: list[str]
     # None = 만료 없음(무제한)
-    expires_days: int | None = Field(default=90, ge=1)
+    expires_days: int | None = Field(default=90, ge=1, le=36500)
     rate_limit: Literal["10/min", "30/min", "60/min"] = "30/min"
 
 

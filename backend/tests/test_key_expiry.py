@@ -28,3 +28,8 @@ def test_key_create_accepts_null_and_rejects_non_positive():
     assert KeyCreate(label="a", scopes=[]).expires_days == 90
     with pytest.raises(ValidationError):
         KeyCreate(label="a", scopes=[], expires_days=0)
+
+
+def test_key_create_rejects_too_large_days():
+    with pytest.raises(ValidationError):
+        KeyCreate(label="a", scopes=[], expires_days=3_000_000)
