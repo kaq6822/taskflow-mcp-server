@@ -20,7 +20,7 @@ This is already specified in `backend/pyproject.toml`, so re-running `make setup
 
 ### `no such column: jobs.params` / `runs.params` / `runs.outputs` after upgrading
 
-The new version's DB migrations (`0003_run_params`, `0004_run_outputs`, etc.) have not been applied. The table auto-creation at server start does not add columns to existing tables.
+The new version's DB migrations (`0003_run_params`, `0004_run_outputs`, `0005_single_running_run`, etc.) have not been applied. The table auto-creation at server start does not add columns to existing tables.
 
 ```sh
 make migrate
@@ -115,6 +115,12 @@ Check the backend logs for `Task exception was never retrieved`. Most commonly:
 - Rejected by policy (e.g. `cd`/`pushd`/`popd` as a step command), but the UI is still polling for status
 
 Stderr is recorded in `backend/storage/logs/<run_id>/<step_id>.log`.
+
+### Trigger returns `409 CONFLICT` although nothing is running
+
+The database allows one `RUNNING` run per job, shared by the backend and the MCP server. If a server stops mid-run, the run stays `RUNNING` until that server starts again, which finalizes its own leftover runs as `FAILED` (`서버 재시작으로 중단`). It leaves the other server's runs alone, so a run left by a server that has not restarted keeps blocking the job.
+
+Runs started before `0005_single_running_run` do not record which server ran them and are not finalized automatically. Cancel the `current_run_id` from the 409 response (over MCP: `… already running as #<run_id>`) with `POST /api/runs/{id}/cancel`, then trigger again.
 
 ### Step exits 0 but becomes `FAILED`
 

@@ -20,7 +20,7 @@ backend/.venv/bin/pip install "greenlet>=3.0"
 
 ### 업그레이드 후 `no such column: jobs.params` / `runs.params` / `runs.outputs`
 
-새 버전의 DB 마이그레이션(`0003_run_params`, `0004_run_outputs` 등)이 적용되지 않았습니다. 서버 기동 시의 테이블 자동 생성은 기존 테이블에 컬럼을 추가하지 않습니다.
+새 버전의 DB 마이그레이션(`0003_run_params`, `0004_run_outputs`, `0005_single_running_run` 등)이 적용되지 않았습니다. 서버 기동 시의 테이블 자동 생성은 기존 테이블에 컬럼을 추가하지 않습니다.
 
 ```sh
 make migrate
@@ -115,6 +115,12 @@ Backend 로그에서 `Task exception was never retrieved`를 확인하세요. �
 - `cd`/`pushd`/`popd`를 step 명령으로 써서 `policy.violation`으로 거부되었는데 UI가 아직 상태 폴링 중
 
 `backend/storage/logs/<run_id>/<step_id>.log` 파일에 stderr가 기록됩니다.
+
+### 실행 중인 Run이 없는데 트리거가 `409 CONFLICT`
+
+Job당 `RUNNING` Run은 DB에서 1개로 제한됩니다(Backend와 MCP 서버 양쪽에 공통). 서버가 Run 도중 종료되면 그 Run은 `RUNNING`으로 남지만, 해당 서버가 다시 기동할 때 자기가 실행하던 Run을 `FAILED`(`서버 재시작으로 중단`)로 정리합니다. 다른 쪽 서버가 실행하던 Run은 건드리지 않으므로, 그 서버를 재기동하지 않으면 계속 막힙니다.
+
+`0005_single_running_run` 이전에 시작된 Run은 어느 서버 것인지 기록이 없어 자동 정리되지 않습니다. 409 응답의 `current_run_id`(MCP는 `… already running as #<run_id>`)를 `POST /api/runs/{id}/cancel`로 취소하면 다시 실행할 수 있습니다.
 
 ### Step이 exit 0인데 `FAILED`가 됨
 
