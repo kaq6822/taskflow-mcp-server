@@ -27,6 +27,8 @@ curl -s -X POST http://localhost:8000/api/keys \
   }'
 ```
 
+`expires_days` is an integer from 1 to 36500 (default 90); send `null` to issue a key that never expires.
+
 Example response:
 
 ```json

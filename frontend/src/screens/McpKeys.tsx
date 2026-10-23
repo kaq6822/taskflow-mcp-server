@@ -143,7 +143,7 @@ export function McpKeys() {
                     ))}
                   </td>
                   <td className="mono-s dim">{k.created.slice(0, 10)}</td>
-                  <td className="mono-s">{k.expires ? k.expires.slice(0, 10) : '—'}</td>
+                  <td className="mono-s">{k.expires ? k.expires.slice(0, 10) : t.expires_never}</td>
                   <td className="mono-s">{k.rate_limit}</td>
                   <td>{stateChip(k.state)}</td>
                   <td>
@@ -259,7 +259,7 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
   const pushToast = useStore((s) => s.pushToast);
 
   const [label, setLabel] = useState('');
-  const [exp, setExp] = useState<30 | 90 | 180>(90);
+  const [exp, setExp] = useState<30 | 90 | 180 | 0>(90);
   const [rate, setRate] = useState<'10/min' | '30/min' | '60/min'>('30/min');
   const availableScopes = [
     'read:jobs',
@@ -281,7 +281,7 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
       const res = await api.issueKey({
         label,
         scopes: selected,
-        expires_days: exp,
+        expires_days: exp === 0 ? null : exp,
         rate_limit: rate,
       });
       setIssued(res.plaintext);
@@ -349,11 +349,12 @@ function IssueKeyModal({ onClose }: { onClose: () => void }) {
                   <select
                     className="select"
                     value={exp}
-                    onChange={(e) => setExp(Number(e.target.value) as 30 | 90 | 180)}
+                    onChange={(e) => setExp(Number(e.target.value) as 30 | 90 | 180 | 0)}
                   >
                     <option value={30}>{dayLabel(30)}</option>
                     <option value={90}>{dayLabel(90)}</option>
                     <option value={180}>{dayLabel(180)}</option>
+                    <option value={0}>{t.expires_never}</option>
                   </select>
                 </div>
                 <div>

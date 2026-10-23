@@ -209,7 +209,7 @@ export const api = {
   issueKey: (body: {
     label: string;
     scopes: string[];
-    expires_days: number;
+    expires_days: number | null;
     rate_limit: '10/min' | '30/min' | '60/min';
   }) => req<KeyIssued>('/api/keys', { method: 'POST', body: JSON.stringify(body) }),
   revokeKey: (id: string) => req<void>(`/api/keys/${id}`, { method: 'DELETE' }),

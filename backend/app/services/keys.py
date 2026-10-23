@@ -27,7 +27,7 @@ async def issue_key(
     *,
     label: str,
     scopes: list[str],
-    expires_days: int,
+    expires_days: int | None,
     rate_limit: str,
 ) -> tuple[Key, str]:
     plaintext = _mint_plaintext()
@@ -38,7 +38,7 @@ async def issue_key(
         key_prefix=plaintext[:16],
         key_suffix=plaintext[-4:],
         scopes=list(scopes),
-        expires=utcnow() + timedelta(days=expires_days),
+        expires=utcnow() + timedelta(days=expires_days) if expires_days is not None else None,
         rate_limit=rate_limit,
         state="ACTIVE",
     )

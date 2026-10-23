@@ -27,6 +27,8 @@ curl -s -X POST http://localhost:8000/api/keys \
   }'
 ```
 
+`expires_days`는 1~36500 정수(기본 90)이며, `null`을 보내면 만료 없는(무제한) Key가 발급됩니다.
+
 응답 예:
 
 ```json
