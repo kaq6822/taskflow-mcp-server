@@ -1,6 +1,5 @@
-.PHONY: setup setup-backend setup-frontend dev dev-backend dev-mcp dev-frontend \
-        dev-lan dev-lan-backend dev-lan-mcp dev-lan-frontend \
-        build ensure-build start start-backend start-mcp \
+.PHONY: setup setup-backend setup-frontend dev dev-backend dev-frontend \
+        dev-lan build ensure-build start start-backend \
         start-bg stop status logs \
         test migrate reset clean
 
@@ -8,7 +7,6 @@ PY := python3
 VENV := backend/.venv
 PYBIN := $(VENV)/bin
 PIP := $(PYBIN)/pip
-UVICORN := $(PYBIN)/uvicorn
 ALEMBIC := $(PYBIN)/alembic
 PYTEST := $(PYBIN)/pytest
 
@@ -24,7 +22,6 @@ FRONTEND_PORT  ?= 5173
 LOG_DIR        := logs
 LOG_FILE       := $(LOG_DIR)/taskflow.log
 BACKEND_PID    := $(LOG_DIR)/backend.pid
-MCP_PID        := $(LOG_DIR)/mcp.pid
 
 # ---- Setup ---------------------------------------------------------------
 setup: setup-backend setup-frontend migrate
@@ -42,21 +39,22 @@ migrate:
 	cd backend && ../$(ALEMBIC) upgrade head
 
 # ---- Dev (loopback) ------------------------------------------------------
-# Three processes. The frontend binds to FRONTEND_HOST (localhost by default);
-# the backend and MCP default to 0.0.0.0, so they ARE reachable from the network
-# even here — pass API_HOST=127.0.0.1 MCP_HOST=127.0.0.1 to keep them loopback-only.
+# Two processes: the backend (`python -m app` — REST API and MCP on their own
+# ports, one Run Engine) and the Vite dev server. The frontend binds to
+# FRONTEND_HOST (localhost by default); the API and MCP default to 0.0.0.0, so
+# they ARE reachable from the network even here — pass API_HOST=127.0.0.1
+# MCP_HOST=127.0.0.1 to keep them loopback-only.
 # There is no auth on /api/*, so treat any non-loopback binding as public access
 # to arbitrary command execution (see docs/security.md).
 dev:
 	@echo "dev → backend $(API_HOST):$(API_PORT) · mcp $(MCP_HOST):$(MCP_PORT) · frontend $(FRONTEND_HOST):$(FRONTEND_PORT)"
 	@trap 'kill 0' INT TERM EXIT; \
-	  $(MAKE) -j3 dev-backend dev-mcp dev-frontend
+	  $(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend:
-	cd backend && ../$(UVICORN) app.main:app --host $(API_HOST) --port $(API_PORT) --reload
-
-dev-mcp:
-	cd backend && TASKFLOW_MCP_HOST=$(MCP_HOST) TASKFLOW_MCP_PORT=$(MCP_PORT) ../$(PYBIN)/python -m app.mcp_server
+	cd backend && TASKFLOW_API_HOST=$(API_HOST) TASKFLOW_API_PORT=$(API_PORT) \
+	  TASKFLOW_MCP_HOST=$(MCP_HOST) TASKFLOW_MCP_PORT=$(MCP_PORT) \
+	  ../$(PYBIN)/python -m app --reload
 
 dev-frontend:
 	cd frontend && TASKFLOW_FRONTEND_HOST=$(FRONTEND_HOST) TASKFLOW_FRONTEND_PORT=$(FRONTEND_PORT) \
@@ -88,39 +86,35 @@ ensure-build:
 	fi
 
 # ---- Production start ----------------------------------------------------
-# Backend serves the built SPA from frontend/dist and the JSON API from the
-# same port; MCP runs on its own port. No Vite dev-server in this mode.
+# One process: the built SPA and the JSON API on API_PORT, MCP on MCP_PORT.
+# No Vite dev-server in this mode.
 # Override with:
 #   make start API_PORT=80 MCP_PORT=7391 TASKFLOW_CORS_ORIGINS=https://app.example.com
 start: ensure-build
-	@echo "start → production mode (backend serves SPA + API at :$(API_PORT), mcp :$(MCP_PORT))"
-	@trap 'kill 0' INT TERM EXIT; \
-	  $(MAKE) -j2 start-backend start-mcp
+	@echo "start → production mode (SPA + API at :$(API_PORT), mcp :$(MCP_PORT))"
+	$(MAKE) start-backend
 
 start-backend:
 	cd backend && TASKFLOW_ENV=production TASKFLOW_FRONTEND_DIST_DIR=../frontend/dist \
-	  ../$(UVICORN) app.main:app --host $(API_HOST) --port $(API_PORT) --workers 1
-
-start-mcp:
-	cd backend && TASKFLOW_ENV=production TASKFLOW_MCP_HOST=$(MCP_HOST) TASKFLOW_MCP_PORT=$(MCP_PORT) \
-	  ../$(PYBIN)/python -m app.mcp_server
+	  TASKFLOW_API_HOST=$(API_HOST) TASKFLOW_API_PORT=$(API_PORT) \
+	  TASKFLOW_MCP_HOST=$(MCP_HOST) TASKFLOW_MCP_PORT=$(MCP_PORT) \
+	  ../$(PYBIN)/python -m app
 
 # ---- Background (production) --------------------------------------------
 # Delegates to shell scripts under scripts/ so the logic stays readable and
 # portable (Make recipes + `&` + `$!` compose poorly).
 start-bg: ensure-build
 	@API_HOST=$(API_HOST) API_PORT=$(API_PORT) MCP_HOST=$(MCP_HOST) MCP_PORT=$(MCP_PORT) \
-	  LOG_DIR=$(LOG_DIR) LOG_FILE=$(LOG_FILE) \
-	  BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	  LOG_DIR=$(LOG_DIR) LOG_FILE=$(LOG_FILE) BACKEND_PID_FILE=$(BACKEND_PID) \
 	  bash scripts/start-bg.sh
 
 stop:
-	@LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	@LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) \
 	  bash scripts/stop.sh
 
 status:
 	@API_PORT=$(API_PORT) MCP_PORT=$(MCP_PORT) \
-	  LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) MCP_PID_FILE=$(MCP_PID) \
+	  LOG_DIR=$(LOG_DIR) BACKEND_PID_FILE=$(BACKEND_PID) \
 	  bash scripts/status.sh
 
 logs:

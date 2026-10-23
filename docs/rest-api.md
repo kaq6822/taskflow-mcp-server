@@ -80,7 +80,7 @@ event: ping            data: {}            # 30초 동안 이벤트가 없으면
 - `run.started`의 `artifacts`는 `{alias: "uploads://<name>@<version>"}`(고정된 참조), `params`는 Run에 고정된 파라미터 값입니다.
 - `step.log`의 `lvl`은 `cmd`(실행 명령) / `dim`(메타: cwd·timeout, `artifacts · …`, `params · …`, `outputs · …` 등) / `info`(stdout) / `err`(stderr·실패) / `warn` / `ok`입니다.
 - 구독 시점 이전 이벤트는 프로세스 메모리에 남은 최근 500개까지 먼저 재생되고, `run.finished` 뒤에 스트림이 닫힙니다.
-- 이벤트는 Run을 실행하는 프로세스 안에만 있습니다. MCP로 트리거한 Run은 MCP 서버 프로세스에서 실행되므로 이 엔드포인트로는 이벤트가 오지 않습니다(heartbeat만 옴) — `GET /api/runs/{id}`로 polling하세요.
+- MCP로 트리거한 Run도 같은 프로세스·같은 log_bus에서 실행되므로 이 엔드포인트로 이벤트가 옵니다.
 
 브라우저에서 `EventSource('/api/runs/{id}/stream')`로 바로 구독할 수 있습니다.
 

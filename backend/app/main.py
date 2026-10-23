@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
             print("store this safely; it will not be shown again.")
             print("=" * 60)
     yield
+    await get_engine().shutdown()
 
 
 app = FastAPI(title="TaskFlow API", version="0.1.0", lifespan=lifespan)

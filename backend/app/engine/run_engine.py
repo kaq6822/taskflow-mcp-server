@@ -61,9 +61,6 @@ def _fmt_argv(cmd: object) -> str:
 
 CANCELLED_MESSAGE = "사용자 취소"
 INTERRUPTED_MESSAGE = "서버 재시작으로 중단"
-# How often a running run checks whether the other process cancelled it. Until
-# it notices, the job's slot is already free while its step is still running.
-CANCEL_POLL_SEC = 1.0
 
 
 class JobBusyError(Exception):
@@ -82,21 +79,21 @@ class JobBusyError(Exception):
 class RunEngine:
     """Single-process engine.
 
-    "One run in progress per job" is enforced by the `uq_runs_job_running`
-    index, not by this object: the backend and the MCP server each hold their
-    own engine, so in-memory state cannot see the other process's runs. The
-    per-job asyncio.Lock only serialises execution inside this process — a run
-    started right after a cancel waits for the cancelled task to unwind.
+    The REST API and the MCP endpoint share this one engine (see
+    `app/__main__.py`). "One run in progress per job" is enforced by the
+    `uq_runs_job_running` index: the lookup in `start()` and the insert are not
+    atomic, so the insert is what decides. The per-job asyncio.Lock only
+    serialises execution — a run started right after a cancel waits for the
+    cancelled task to unwind.
     """
 
-    def __init__(self, runner: str = "api") -> None:
-        self.runner = runner
+    def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
         self._live: dict[str, int] = {}  # job_id → run_id
         self._tasks: dict[int, asyncio.Task] = {}
         self._pending_launch: dict[int, str] = {}
         self._cancelled: set[int] = set()
-        self._watchers: dict[int, asyncio.Task] = {}
+        self._stopping = False
 
     def live_run_for(self, job_id: str) -> int | None:
         return self._live.get(job_id)
@@ -215,7 +212,6 @@ class RunEngine:
             artifact_refs=pinned,
             params=resolved_params,
             idempotency_key=idempotency_key,
-            runner=self.runner,
         )
         session.add(run)
         try:
@@ -247,19 +243,15 @@ class RunEngine:
         return run
 
     async def recover_orphans(self) -> list[int]:
-        """Finalize RUNNING runs this engine's process left behind.
+        """Finalize RUNNING runs a previous process left behind.
 
-        Call once at process startup, before serving. A run's task lives only
-        in the process that started it, so after a restart its RUNNING row is
-        an orphan — and with the one-running-run index it would refuse every
-        new run of that job. Runs of the other process are left alone: it may
-        still be executing them.
+        Call once at startup, before serving. Every run's task lives in this
+        one process, so after a restart any RUNNING row is an orphan — and with
+        the one-running-run index it would refuse every new run of that job.
         """
         async with SessionLocal() as s:
             orphans = (
-                await s.execute(
-                    select(Run).where(Run.status == "RUNNING", Run.runner == self.runner)
-                )
+                await s.execute(select(Run).where(Run.status == "RUNNING"))
             ).scalars().all()
             for run in orphans:
                 run.err_message = run.err_message or INTERRUPTED_MESSAGE
@@ -269,11 +261,24 @@ class RunEngine:
                     who="system",
                     kind="job.run.fail",
                     target=f"{run.job_id} #{run.id}",
-                    src="mcp" if self.runner == "mcp" else "web",
+                    src="mcp" if run.trigger == "mcp" else "web",
                     result="FAIL",
                 )
             await s.commit()
             return [run.id for run in orphans]
+
+    async def shutdown(self) -> None:
+        """Stop every run in progress; call when the process is stopping.
+
+        Cancelling the tasks kills their step subprocesses and records the runs
+        as interrupted. Left to the event loop's teardown, a SIGTERM exit skips
+        that and the subprocesses outlive the server.
+        """
+        self._stopping = True
+        tasks = list(self._tasks.values())
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def launch(self, run_id: int) -> None:
         """Spawn the per-run asyncio task. Call this *after* the caller's
@@ -349,14 +354,10 @@ class RunEngine:
         """Owned by engine. Re-opens its own DB session."""
         lock = self._locks.setdefault(job_id, asyncio.Lock())
         await lock.acquire()
-        self._watchers[run_id] = asyncio.create_task(
-            self._watch_remote_cancel(run_id, asyncio.current_task())
-        )
         try:
             try:
                 await self._run_loop_body(job_id, run_id)
             except asyncio.CancelledError:
-                self._stop_watch(run_id)
                 # P2-7: when the active step is cancelled the body raises before
                 # it reaches `run.finished`. Publish the terminal event so SSE
                 # subscribers and MCP `subscribe_run` consumers unblock and see
@@ -365,7 +366,6 @@ class RunEngine:
                 # Do not re-raise — this task is the engine's own; swallowing
                 # keeps engine bookkeeping in the `finally` below simple.
         finally:
-            self._stop_watch(run_id)
             # A run started after this one was cancelled may already own the
             # slot; only clear it if it is still ours.
             if self._live.get(job_id) == run_id:
@@ -373,38 +373,6 @@ class RunEngine:
             self._tasks.pop(run_id, None)
             self._cancelled.discard(run_id)
             lock.release()
-
-    async def _watch_remote_cancel(self, run_id: int, task: asyncio.Task) -> None:
-        """Stop `task` once its run is no longer RUNNING in the database.
-
-        A cancel that arrives at the other process finds no task there, so it
-        only marks the row FAILED. Without this the step keeps executing here,
-        overlapping the next run the freed slot lets in.
-        """
-        while True:
-            await asyncio.sleep(CANCEL_POLL_SEC)
-            if run_id in self._cancelled:
-                return
-            async with SessionLocal() as s:
-                status = (
-                    await s.execute(select(Run.status).where(Run.id == run_id))
-                ).scalar_one_or_none()
-            if status == "RUNNING":
-                continue
-            # A local cancel may have landed during the read; a second
-            # task.cancel() would interrupt its subprocess cleanup.
-            if run_id in self._cancelled or task.cancelling():
-                return
-            self._cancelled.add(run_id)
-            task.cancel()
-            return
-
-    def _stop_watch(self, run_id: int) -> None:
-        """Called before this engine finalizes the run itself: from then on a
-        non-RUNNING status is its own write, not a cancel to act on."""
-        watcher = self._watchers.pop(run_id, None)
-        if watcher is not None:
-            watcher.cancel()
 
     async def _run_loop_body(self, job_id: str, run_id: int) -> None:
         # Phase A — snapshot immutable Run/Job fields into plain values. The
@@ -540,11 +508,10 @@ class RunEngine:
                     failed = True
 
         # Phase C — finalize Run + audit append in a single short transaction.
-        self._stop_watch(run_id)
         async with SessionLocal() as session:
             run = await session.get(Run, run_id)
             if run is None:
-                # Deleted after a cancel from the other process freed the job.
+                # Deleted while the last step ran — still close the stream.
                 log_bus.publish(
                     run_id,
                     "run.finished",
@@ -552,15 +519,11 @@ class RunEngine:
                         "run_id": run_id,
                         "status": "FAILED",
                         "failed_step": failed_step,
-                        "err_message": CANCELLED_MESSAGE,
+                        "err_message": err_message,
                         "duration_sec": 0.0,
                     },
                 )
                 return
-            if run.status != "RUNNING":
-                # Cancelled from the other process after the watcher's last
-                # look. A step that finished anyway must not turn it SUCCESS.
-                self._cancelled.add(run_id)
             run.finished_at = utcnow()
             run.duration_sec = (run.finished_at - started_at).total_seconds()
             if run_id in self._cancelled:
@@ -618,7 +581,6 @@ class RunEngine:
         started_at: datetime,
     ) -> None:
         """Finalize a run that cannot start — no step has executed yet."""
-        self._stop_watch(run_id)
         async with SessionLocal() as session:
             run = await session.get(Run, run_id)
             if run is None:
@@ -675,6 +637,8 @@ class RunEngine:
                 if run is None:
                     # Deleted meanwhile — still close the stream below.
                     raise LookupError(run_id)
+                if self._stopping:
+                    run.err_message = run.err_message or INTERRUPTED_MESSAGE
                 await self._mark_cancelled(s, run)
                 await append_event(
                     s,
@@ -1028,17 +992,6 @@ class RunEngine:
 
 
 _ENGINE: RunEngine | None = None
-
-
-def init_engine(runner: str) -> RunEngine:
-    """Create the process-wide engine for `runner` ("api" or "mcp").
-
-    The MCP server calls this before serving; the backend relies on the
-    default from `get_engine()`.
-    """
-    global _ENGINE
-    _ENGINE = RunEngine(runner)
-    return _ENGINE
 
 
 def get_engine() -> RunEngine:

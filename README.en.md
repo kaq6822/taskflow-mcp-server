@@ -16,9 +16,11 @@
 flowchart TB
     Agent[AI Agent<br/>Claude, etc.]
     UI[Frontend · :5173<br/>Vite + React]
-    API[FastAPI Backend · :8000<br/>REST + SSE]
-    MCP[MCP Server · :7391<br/>Streamable HTTP + Bearer]
-    ENG[asyncio Run Engine<br/>subprocess argv, shell=False]
+    subgraph BE[backend process · python -m app]
+        API[FastAPI · :8000<br/>REST + SSE]
+        MCP[MCP · :7391<br/>Streamable HTTP + Bearer]
+        ENG[asyncio Run Engine<br/>subprocess argv, shell=False]
+    end
     DB[(SQLite · taskflow.db)]
     FS[storage/ · logs · artifacts]
 
@@ -30,7 +32,7 @@ flowchart TB
     ENG --> FS
 ```
 
-The backend and the MCP server are separate processes. Each embeds its own Run Engine, and both share the same SQLite DB and `storage/`. MCP calls do not go through the REST API.
+The backend and the MCP server run in one process (`python -m app`) on separate ports, sharing one Run Engine and one log_bus. So a run started over MCP shows live in the UI Monitor and can be cancelled from the UI. MCP calls do not go through the REST API.
 
 ## Quickstart
 

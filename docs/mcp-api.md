@@ -130,7 +130,7 @@ curl -X POST http://localhost:7391/mcp \
 | `list_runs({job_id?, status?, limit?})` | `read:runs` | Run 이력 조회 (최신순, `limit` 기본 20·최대 200). 각 항목은 Agent 스키마 — "마지막 성공 Run의 출력값"은 `list_runs(job_id=…, status="SUCCESS", limit=1)` |
 | `get_run(run_id)` | `read:runs` | Run 상태/결과 (Agent 스키마 — `params`·`outputs` 포함) |
 | `get_run_logs(run_id, step_id, {tail?})` | `read:runs` | Step 로그 텍스트 (`tail` 기본 200줄) |
-| `subscribe_run(run_id, {tail?})` | `read:runs` | 이 MCP 서버 프로세스의 log_bus 최근 이벤트 스냅샷 (스트리밍 아님) |
+| `subscribe_run(run_id, {tail?})` | `read:runs` | 공유 log_bus의 최근 이벤트 스냅샷 (스트리밍 아님) |
 | `upload_artifact(name, version, content_base64, {ext?})` | `write:uploads` | 아티팩트 업로드 (base64 인코딩) |
 | `get_artifact(name, version)` | `read:jobs` | 아티팩트 상태. `version`에 `latest` 사용 가능 |
 | `run_job(job_id, {mode, artifact_refs?, params?, idempotency_key?})` | `run:<job_id>` | Run 트리거. `mode`: `sync` / `async`. `artifact_refs`는 `{alias: "uploads://<name>@<ver\|latest>"}`, 생략한 alias는 `@latest`로 해석 후 구체 버전으로 고정. `params`는 `{name: value}`로 Job이 선언한 파라미터만 허용하며, 생략한 파라미터는 기본값 ([Run 파라미터](./run-params.md)). 선언 내용은 `get_job`의 `params`로 확인 |
@@ -165,7 +165,7 @@ curl -X POST http://localhost:7391/mcp \
 - **`sync`** (기본): Run 완료까지 대기 후 Agent 스키마로 응답. `TASKFLOW_MCP_MAX_SYNC_SEC`(기본 600초) 초과 시 `{run_id, status:"RUNNING", degraded_to:"async"}` 반환
 - **`async`**: 즉시 `{run_id, status:"RUNNING", poll_url}` 반환 → 이후 `get_run(run_id)`로 polling
 
-Run은 호출을 받은 MCP 서버 프로세스 안에서 실행됩니다. 실시간 이벤트는 그 프로세스에만 있으므로 MCP로 트리거한 Run은 Backend의 `GET /api/runs/{id}/stream`(SSE)으로 받을 수 없습니다 — 진행 상황은 `get_run` polling이나 `subscribe_run`으로 확인하세요.
+MCP와 Backend는 한 프로세스에서 Run Engine·log_bus를 공유하므로, MCP로 트리거한 Run도 Backend의 `GET /api/runs/{id}/stream`(SSE)으로 받을 수 있고 UI Monitor에 실시간으로 보입니다. REST/UI에서 취소하면 MCP로 시작한 Run의 step도 멈춥니다. 진행 상황은 `get_run` polling이나 `subscribe_run`으로도 확인할 수 있습니다.
 
 ## 6. Idempotency
 

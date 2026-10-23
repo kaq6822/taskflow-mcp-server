@@ -18,9 +18,11 @@
 flowchart TB
     Agent[AI Agent<br/>Claude, etc.]
     UI[Frontend · :5173<br/>Vite + React]
-    API[FastAPI Backend · :8000<br/>REST + SSE]
-    MCP[MCP Server · :7391<br/>Streamable HTTP + Bearer]
-    ENG[asyncio Run Engine<br/>subprocess argv, shell=False]
+    subgraph BE[backend process · python -m app]
+        API[FastAPI · :8000<br/>REST + SSE]
+        MCP[MCP · :7391<br/>Streamable HTTP + Bearer]
+        ENG[asyncio Run Engine<br/>subprocess argv, shell=False]
+    end
     DB[(SQLite · taskflow.db)]
     FS[storage/ · logs · artifacts]
 
@@ -32,7 +34,7 @@ flowchart TB
     ENG --> FS
 ```
 
-Backend와 MCP 서버는 별도 프로세스이며, 각자 Run Engine을 내장한 채 같은 SQLite DB와 `storage/`를 공유합니다. MCP 호출이 REST API를 거쳐 가지는 않습니다.
+Backend와 MCP 서버는 한 프로세스(`python -m app`)에서 포트만 나눠 떠 있으며, 하나의 Run Engine과 log_bus를 공유합니다. 그래서 MCP로 시작한 Run도 UI Monitor에서 실시간으로 보이고, UI에서 취소할 수 있습니다. MCP 호출이 REST API를 거쳐 가지는 않습니다.
 
 ## Quickstart
 

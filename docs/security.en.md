@@ -37,7 +37,7 @@ When the step environment (variables inherited from the server process + the ste
 - Values written in a step's `env` are part of the Job definition, **stored in plaintext in the DB**, and returned as-is by `GET /api/jobs` and MCP `list_jobs`/`get_job` (`read:jobs`).
 - No `secret.read` audit event is recorded (not implemented).
 
-Keep real secrets out of Job definitions: provide them through the environment of the backend / MCP server processes (steps inherit it) or a file the step script reads.
+Keep real secrets out of Job definitions: provide them through the environment of the single backend process (steps inherit it) or a file the step script reads.
 
 ### 4. Reserved Environment Variables (`PARAM_*` · `ARTIFACT_*`)
 

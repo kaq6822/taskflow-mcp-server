@@ -57,7 +57,7 @@
 | **MCP** | AI Agent 엔드포인트 (Bearer · scope · rate-limit) |
 | **Scheduler** | cron 기반 Job 발화 |
 
-> **구현 현황:** 현재는 API 서버(REST·SSE)와 MCP 엔드포인트가 **별도 프로세스**이며, 각자 asyncio Run Engine을 내장하고 같은 SQLite DB와 `storage/`를 공유합니다. MCP 호출은 API 서버를 거치지 않고 MCP 프로세스 안에서 Run을 실행합니다. Scheduler·Queue·Worker pool은 미구현이고, Web UI 세션 인증(§4.1)도 없습니다.
+> **구현 현황:** 현재는 API 서버(REST·SSE)와 MCP 엔드포인트가 **한 프로세스**(`python -m app`)에서 포트만 나눠 뜨며, 하나의 asyncio Run Engine과 log_bus를 공유합니다. MCP 호출은 API 서버를 거치지 않고 같은 프로세스 안에서 Run을 실행합니다. Scheduler·Queue·Worker pool은 미구현이고, Web UI 세션 인증(§4.1)도 없습니다.
 
 ## 2. MCP 인터페이스
 

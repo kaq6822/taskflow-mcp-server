@@ -12,12 +12,12 @@
 make dev
 ```
 
-세 프로세스가 동시에 뜹니다:
+두 프로세스가 동시에 뜹니다. Backend 프로세스(`python -m app --reload`, 코드 변경 시 재시작) 하나가 API와 MCP를 모두 서빙합니다:
 
 | 프로세스 | 포트 | 역할 |
 |---|---|---|
 | Backend | `http://localhost:8000` | REST API · SSE |
-| MCP Server | `http://localhost:7391/mcp` | MCP 엔드포인트 (Bearer 인증) |
+| | `http://localhost:7391/mcp` | MCP 엔드포인트 (Bearer 인증) — Backend와 같은 프로세스 |
 | Frontend | `http://localhost:5173` | React UI (API는 Vite 프록시) |
 
 ### B. 프로덕션 (foreground)
@@ -25,7 +25,7 @@ make dev
 ```sh
 make setup        # 1회
 make build        # frontend/dist 생성
-make start        # backend가 SPA+API 통합 서빙(:8000), mcp(:7391) 별도
+make start        # 한 프로세스: SPA+API(:8000) + MCP(:7391)
 ```
 
 접속: `http://localhost:8000` (Vite 불필요, same-origin이라 CORS 이슈 없음). `Ctrl+C`로 정지.
@@ -37,10 +37,10 @@ make start        # backend가 SPA+API 통합 서빙(:8000), mcp(:7391) 별도
 ```sh
 make setup
 make build
-make start-bg     # nohup 기반. logs/{backend,mcp}.pid + logs/taskflow.log 생성
+make start-bg     # nohup 기반. logs/backend.pid + logs/taskflow.log 생성
 make logs         # tail -f logs/taskflow.log
 make status       # running 여부 · pid · port
-make stop         # 정지 (pidfile + pkill fallback)
+make stop         # 정지 — SIGTERM 후 최대 20초(STOP_TIMEOUT_SEC) 대기, 남으면 SIGKILL. 실행 중 Run은 `서버 재시작으로 중단`으로 정리. 이전 2프로세스 구성도 종료
 ```
 
 포트/바인딩 변경은 `make start-bg API_PORT=80 MCP_PORT=7391` 식으로.
@@ -53,7 +53,7 @@ make stop         # 정지 (pidfile + pkill fallback)
 | 로컬 dev | `make dev` | Vite는 `localhost`만 바인드 |
 | LAN dev | `make dev-lan` | Vite·API·MCP 모두 `0.0.0.0`으로 바인드 |
 | 프로덕션 빌드 | `make build` | `frontend/dist` 생성 |
-| 프로덕션 실행 | `make start` | backend가 SPA+API 통합 서빙, MCP 분리 |
+| 프로덕션 실행 | `make start` | 한 프로세스가 SPA+API와 MCP를 서빙 |
 | 테스트 | `make test` | pytest |
 | DB 마이그레이션 | `make migrate` | `alembic upgrade head` — 업그레이드 후 필수 |
 | DB 초기화 | `make reset` | SQLite + storage 삭제 후 migrate |
@@ -62,11 +62,9 @@ make stop         # 정지 (pidfile + pkill fallback)
 개별 서비스:
 
 ```sh
-make dev-backend   # uvicorn app.main:app :8000 (dev)
-make dev-mcp       # python -m app.mcp_server :7391 (dev)
+make dev-backend   # python -m app --reload (API :8000 + MCP :7391, dev)
 make dev-frontend  # vite :5173 (dev)
-make start-backend # production: SPA+API 통합
-make start-mcp     # production MCP
+make start-backend # production: SPA+API+MCP 한 프로세스
 ```
 
 ## 네트워크 바인딩
@@ -85,7 +83,7 @@ make dev FRONTEND_HOST=0.0.0.0 API_HOST=0.0.0.0 MCP_HOST=0.0.0.0 \
 make 타깃은 바인딩을 **Make 변수**(`API_HOST`/`API_PORT`/`MCP_HOST`/`MCP_PORT`/`FRONTEND_HOST`/`FRONTEND_PORT`)로 받아 각 프로세스에 넘깁니다. 이때 `.env`나 셸의 `TASKFLOW_*_HOST`/`TASKFLOW_*_PORT`는 Make 변수 값으로 덮어써지므로 효과가 없습니다.
 
 - `FRONTEND_HOST` — Vite 바인딩 인터페이스 (Vite에는 `TASKFLOW_FRONTEND_HOST`로 전달)
-- `API_HOST` / `MCP_HOST` — FastAPI(uvicorn `--host`) / MCP(`TASKFLOW_MCP_HOST`) 바인딩 인터페이스
+- `API_HOST` / `MCP_HOST` — REST API(`TASKFLOW_API_HOST`) / MCP(`TASKFLOW_MCP_HOST`) 바인딩 인터페이스. 포트가 분리되어 있어 인증 없는 `/api/*`는 `127.0.0.1`로 묶고 MCP만 외부에 열 수 있습니다
 - `TASKFLOW_API_HOST_PUBLIC` — Vite proxy target 호스트. `make dev-frontend`는 이를 `API_HOST` 값으로 설정합니다
 - `TASKFLOW_CORS_ORIGINS` — **콤마 구분** origin 화이트리스트. 원격 브라우저가 `/api`를 직접 호출할 때 반드시 포함. Vite 프록시 경유 호출은 same-origin이라 CORS 영향 없음. dev에서 `*` 한 개만 넣으면 allow-all.
 
@@ -95,8 +93,8 @@ make 타깃은 바인딩을 **Make 변수**(`API_HOST`/`API_PORT`/`MCP_HOST`/`MC
 
 `make start`는 다음을 수행합니다:
 
-1. Backend(uvicorn) 한 포트에서 **API + 빌드된 SPA**를 동시 서빙 — 별도 Vite 프로세스 불필요, CORS 이슈 자연 제거 (same-origin).
-2. MCP 서버는 기존처럼 7391 포트에서 독립 실행.
+1. Backend 한 포트에서 **API + 빌드된 SPA**를 동시 서빙 — 별도 Vite 프로세스 불필요, CORS 이슈 자연 제거 (same-origin).
+2. MCP는 같은 프로세스에서 7391 포트로 따로 서빙 (API 시작 완료 후 요청을 받기 시작).
 3. `TASKFLOW_ENV=production`으로 설정되어 CORS가 `TASKFLOW_CORS_ORIGINS`에 지정된 항목으로 고정됨 (`*`는 안전을 위해 production에서 자동 제거).
 
 릴리즈 파이프라인 예:
@@ -116,17 +114,15 @@ make build                       # frontend/dist 생성
 make start API_PORT=80
 
 # 또는 수동으로
-TASKFLOW_ENV=production \
+cd backend && TASKFLOW_ENV=production \
 TASKFLOW_FRONTEND_DIST_DIR=../frontend/dist \
-  ./backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 80
-
-TASKFLOW_ENV=production \
-  ./backend/.venv/bin/python -m app.mcp_server
+TASKFLOW_API_PORT=80 \
+  .venv/bin/python -m app
 ```
 
 리버스 프록시(Nginx/Caddy)를 쓰는 경우 `/`와 `/api/*`를 backend 포트로, `/mcp`를 MCP 포트로 각각 프록시하면 됩니다. HTTPS 종단도 리버스 프록시 계층에서 처리하는 것을 권장.
 
-Backend와 MCP 서버는 각자 Run Engine을 내장한 별도 프로세스입니다. MCP `run_job`으로 시작한 Run은 MCP 서버 프로세스에서 실행되므로, MCP 서버를 내리면 그 프로세스에서 진행 중이던 Run도 함께 중단됩니다. 프로세스가 내려가며 끊긴 Run(Backend 재기동 포함)은 그 프로세스가 다시 기동할 때 `FAILED`(`서버 재시작으로 중단`)로 정리됩니다. 한 Job에는 `RUNNING` Run이 하나만 허용되므로, 내려간 프로세스를 다시 띄우기 전까지는 그 Job을 새로 실행할 수 없습니다 — 기다릴 수 없다면 `POST /api/runs/{id}/cancel` 또는 UI의 정지 버튼으로 정리하세요. `0005_single_running_run` 이전에 시작된 Run은 자동 정리 대상이 아닙니다.
+API와 MCP는 한 프로세스(`python -m app`)에서 하나의 Run Engine을 공유합니다. 둘 중 하나가 기동에 실패(포트 사용 중 등)하거나 종료 시그널을 받으면 둘 다 내려가며, 프로세스를 내리면 진행 중이던 Run도 모두 중단됩니다. 끊긴 Run은 프로세스가 다시 기동할 때 `FAILED`(`서버 재시작으로 중단`)로 정리됩니다. 한 Job에는 `RUNNING` Run이 하나만 허용되므로, 재기동 전까지는 그 Job을 새로 실행할 수 없습니다 — 기다릴 수 없다면 `POST /api/runs/{id}/cancel` 또는 UI의 정지 버튼으로 정리하세요. `0005_single_running_run` 이전에 시작된 Run도 기동 시 정리 대상입니다.
 
 ## 업그레이드
 
@@ -140,13 +136,14 @@ make build           # 프론트엔드가 바뀐 경우 — start/start-bg는 �
 make stop && make start-bg   # 또는 make start
 ```
 
+- **프로세스 구성이 바뀌었습니다.** 예전에는 Backend와 MCP 서버가 별도 프로세스였고 지금은 `python -m app` 하나입니다. 이 변경을 받는 업그레이드에서는 `make start-bg` 전에 반드시 `make stop`을 실행해 이전 두 프로세스를 내리세요(`make stop`은 이전 pid 구성도 처리합니다). 남아 있으면 포트 충돌로 기동에 실패합니다.
 - **`make migrate`는 필수입니다.** 서버 기동 시의 테이블 자동 생성은 새 테이블만 만들고 기존 테이블에 컬럼을 추가하지 않습니다. 예를 들어 Run 파라미터(`0003_run_params` — `jobs.params`·`runs.params`)와 Run 출력값(`0004_run_outputs` — `runs.outputs`)은 마이그레이션 없이 쓰면 `no such column` 오류가 납니다.
 - 마이그레이션은 `backend/alembic/versions/`에 있으며 `TASKFLOW_DB_URL`이 가리키는 DB에 적용됩니다. 적용 전 `backend/taskflow.db`를 백업해 두세요.
 - `make dev`는 Vite가 소스를 직접 서빙하므로 `make build`가 필요 없습니다.
 
 ## 환경변수 참조
 
-`TASKFLOW_*_HOST`/`TASKFLOW_*_PORT`는 프로세스를 수동으로 실행할 때의 값입니다. make 타깃은 위 [네트워크 바인딩](#네트워크-바인딩)처럼 Make 변수로 덮어씁니다.
+`TASKFLOW_*_HOST`/`TASKFLOW_*_PORT`는 `python -m app`을 수동으로 실행할 때의 값입니다. make 타깃은 위 [네트워크 바인딩](#네트워크-바인딩)처럼 Make 변수로 덮어씁니다.
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -154,8 +151,8 @@ make stop && make start-bg   # 또는 make start
 | `TASKFLOW_DB_URL` | `sqlite+aiosqlite:///./taskflow.db` | DB URL |
 | `TASKFLOW_STORAGE_DIR` | `./storage` | 아티팩트·로그 루트 |
 | `TASKFLOW_STEP_CWD` | `./storage/runtime` | Step `cwd` 미지정 시 사용할 기본 subprocess cwd |
-| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | Backend 바인딩. uvicorn은 이 변수를 읽지 않고 make가 넘기는 `--host`/`--port`(`API_HOST`/`API_PORT`, 기본 `0.0.0.0`/`8000`)를 씁니다. `TASKFLOW_API_PORT`는 Vite 프록시 대상 포트로 쓰입니다. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `API_HOST=127.0.0.1` 지정 |
-| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 (`python -m app.mcp_server`가 읽음) |
+| `TASKFLOW_API_HOST` / `TASKFLOW_API_PORT` | `0.0.0.0` / `8000` | REST API 바인딩 (`python -m app`이 읽음. make는 `API_HOST`/`API_PORT`로 넘김). `TASKFLOW_API_PORT`는 Vite 프록시 대상 포트로 쓰입니다. **기본값이 전 인터페이스이며 `/api/*`에는 인증이 없습니다** — 로컬 전용으로 쓰려면 `API_HOST=127.0.0.1` 지정 |
+| `TASKFLOW_MCP_HOST` / `TASKFLOW_MCP_PORT` | `0.0.0.0` / `7391` | MCP 바인딩 (`python -m app`이 읽음) |
 | `TASKFLOW_MCP_MAX_SYNC_SEC` | `600` | `run_job(sync)` 최대 대기 |
 | `TASKFLOW_FRONTEND_HOST` / `TASKFLOW_FRONTEND_PORT` | `localhost` / `5173` | Vite 바인딩 |
 | `TASKFLOW_API_HOST_PUBLIC` | `localhost` | 외부에서 본 API 호스트 (Vite proxy target) |
@@ -187,6 +184,6 @@ Step은 기본적으로 `TASKFLOW_STEP_CWD`에서 실행됩니다. 특정 배포
 | `backend/storage/runtime/` | Step 기본 subprocess cwd (`TASKFLOW_STEP_CWD` 기본값) |
 | `backend/storage/logs/<run_id>/<step_id>.log` | Step 로그 파일 |
 | `backend/storage/artifacts/` | 업로드된 아티팩트 바이너리 |
-| `logs/taskflow.log`, `logs/*.pid` | `make start-bg` 로그·PID |
+| `logs/taskflow.log`, `logs/backend.pid` | `make start-bg` 로그·PID |
 
 런타임 데이터는 전부 gitignore됩니다. 전체 초기화는 `make reset`.

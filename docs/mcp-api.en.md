@@ -130,7 +130,7 @@ At the same time, `mcp.run` (src=mcp) and `job.run.done` (or `job.run.fail`) eve
 | `list_runs({job_id?, status?, limit?})` | `read:runs` | Query run history (newest first, `limit` default 20, max 200). Each item is the agent schema — "outputs of the last successful run" is `list_runs(job_id=…, status="SUCCESS", limit=1)` |
 | `get_run(run_id)` | `read:runs` | Run status/result (agent schema, incl. `params` and `outputs`) |
 | `get_run_logs(run_id, step_id, {tail?})` | `read:runs` | Step log text (`tail` default 200 lines) |
-| `subscribe_run(run_id, {tail?})` | `read:runs` | Recent event snapshot from this MCP server process's log_bus (not a stream) |
+| `subscribe_run(run_id, {tail?})` | `read:runs` | Recent event snapshot from the shared log_bus (not a stream) |
 | `upload_artifact(name, version, content_base64, {ext?})` | `write:uploads` | Upload artifact (base64 encoded) |
 | `get_artifact(name, version)` | `read:jobs` | Artifact status. `version` may be `latest` |
 | `run_job(job_id, {mode, artifact_refs?, params?, idempotency_key?})` | `run:<job_id>` | Trigger a run. `mode`: `sync` / `async`. `artifact_refs` is `{alias: "uploads://<name>@<ver\|latest>"}`; omitted aliases resolve to `@latest` and are pinned to the concrete version. `params` is `{name: value}`, only accepts params the Job declares, and omitted params use their default ([Run parameters](./run-params.en.md)). See `get_job`'s `params` for the declaration |
@@ -165,7 +165,7 @@ A trigger rejected for a reference or param creates no run and records an `mcp.r
 - **`sync`** (default): Waits until the run completes and returns the agent schema. If `TASKFLOW_MCP_MAX_SYNC_SEC` (default 600s) is exceeded, returns `{run_id, status:"RUNNING", degraded_to:"async"}`
 - **`async`**: Returns `{run_id, status:"RUNNING", poll_url}` immediately → poll with `get_run(run_id)` afterward
 
-The run executes inside the MCP server process that received the call. Its live events exist only in that process, so a run triggered over MCP cannot be followed through the backend's `GET /api/runs/{id}/stream` (SSE) — use `get_run` polling or `subscribe_run` instead.
+MCP and the backend share one Run Engine and log_bus in a single process, so a run triggered over MCP can also be followed through the backend's `GET /api/runs/{id}/stream` (SSE) and shows live in the UI Monitor. A cancel from REST/UI stops the step of a run started over MCP. You can also follow progress with `get_run` polling or `subscribe_run`.
 
 ## 6. Idempotency
 
